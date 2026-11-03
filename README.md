@@ -82,11 +82,11 @@ rows, 60 fee records with 44 payments and 2 exams.
 Two processes, in two terminals:
 
 ```bash
-cd server && npm run dev     # API on http://localhost:5001
+cd server && npm run dev     # API on https://tution-29l5.onrender.com
 cd client && npm run dev     # site on http://localhost:5173
 ```
 
-Vite proxies `/api` to `http://localhost:5001`, so if you change `PORT` in
+Vite proxies `/api` to `https://tution-29l5.onrender.com`, so if you change `PORT` in
 `server/.env` change the proxy target in `client/vite.config.js` too.
 
 
