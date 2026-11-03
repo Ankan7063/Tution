@@ -6,7 +6,8 @@ import {
   GraduationCap, ClipboardList, Wallet, MessageCircle, Phone, Mail,
 } from 'lucide-react';
 import { useApp, waLink } from '../context/AppContext.jsx';
-import api from '../api/client.js';
+import api, { getObject, expectArray } from '../api/client.js';
+import { ErrorBoundary } from './ui.jsx';
 
 const sections = [
   { title: 'Main', items: [['/admin', 'Dashboard', LayoutDashboard]] },
@@ -92,7 +93,13 @@ function Sidebar({ open, onClose }) {
 function Notifications() {
   const [open, setOpen] = useState(false);
   const [data, setData] = useState({ rows: [], unread: 0 });
-  const load = () => api.get('/notifications').then(({ data }) => setData(data)).catch(() => {});
+  const [error, setError] = useState(null);
+  const load = () => getObject('/notifications')
+    .then((body) => {
+      setData({ rows: expectArray(body.rows, '/notifications rows'), unread: Number(body.unread) || 0 });
+      setError(null);
+    })
+    .catch((err) => setError(err.message));
   useEffect(() => { load(); const t = setInterval(load, 30000); return () => clearInterval(t); }, []);
   const markAll = async () => { await api.post('/notifications/read-all'); load(); };
   return (
@@ -108,8 +115,9 @@ function Notifications() {
             <button className="text-xs font-semibold text-brand-600 hover:underline" onClick={markAll}>Mark all read</button>
           </div>
           <div className="max-h-80 overflow-y-auto">
-            {data.rows.length === 0 && <p className="px-4 py-6 text-center text-sm text-slate-400">No notifications</p>}
-            {data.rows.map((n) => (
+            {error && <p className="px-4 py-6 text-center text-sm text-rose-600 dark:text-rose-400">{error}</p>}
+            {!error && data.rows.length === 0 && <p className="px-4 py-6 text-center text-sm text-slate-400">No notifications</p>}
+            {!error && data.rows.map((n) => (
               <div key={n.id} className={`border-b border-slate-50 px-4 py-3 last:border-0 dark:border-slate-800 ${!n.isRead ? 'bg-brand-50/60 dark:bg-brand-900/10' : ''}`}>
                 <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">{n.title}</p>
                 <p className="text-xs text-slate-500 dark:text-slate-400">{n.message}</p>
@@ -162,7 +170,7 @@ export default function AdminLayout() {
           </div>
         </header>
         <main className="p-4 sm:p-6">
-          <Outlet />
+          <ErrorBoundary><Outlet /></ErrorBoundary>
         </main>
       </div>
       <span className="hidden">{user?.role}</span>

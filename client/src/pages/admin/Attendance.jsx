@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { CalendarCheck, Save, Users, UserCheck, Loader2, History } from 'lucide-react';
-import api from '../../api/client.js';
+import api, { getArray, getObject, expectArray } from '../../api/client.js';
 import { useApp } from '../../context/AppContext.jsx';
-import { Spinner, Empty, Badge, SelectField, Field, useToast } from '../../components/ui.jsx';
+import { Spinner, Empty, ErrorNote, Badge, SelectField, Field, useToast } from '../../components/ui.jsx';
 
 const STATUSES = ['PRESENT', 'ABSENT', 'LATE', 'LEAVE'];
 
@@ -40,29 +40,31 @@ function StudentMarking({ isStaff }) {
   const [roster, setRoster] = useState(null);
   const [marks, setMarks] = useState({});
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    api.get('/batches').then(({ data }) => {
+    getArray('/batches').then((data) => {
       setBatches(data);
       if (data.length) setBatchId((b) => b || data[0].id);
-    }).catch(() => {});
+    }).catch((err) => toast.error(err.message));
   }, []);
 
   const load = useCallback(async () => {
     if (!batchId || !date) return;
     setRoster(null);
+    setError(null);
     try {
-      const [rosterRes, existingRes] = await Promise.all([
-        api.get('/students', { params: { batchId, limit: 300, status: 'ACTIVE' } }),
-        api.get('/attendance/students', { params: { batchId, date } }),
+      const [studentsBody, existing] = await Promise.all([
+        getObject('/students', { params: { batchId, limit: 300, status: 'ACTIVE' } }),
+        getArray('/attendance/students', { params: { batchId, date } }),
       ]);
+      const rows = expectArray(studentsBody.rows, '/students rows');
       const already = {};
-      for (const row of existingRes.data) already[row.studentId] = row.status;
-      setRoster(rosterRes.data.rows);
-      setMarks(rosterRes.data.rows.reduce((acc, s) => ({ ...acc, [s.id]: already[s.id] || 'PRESENT' }), {}));
+      for (const row of existing) already[row.studentId] = row.status;
+      setRoster(rows);
+      setMarks(rows.reduce((acc, s) => ({ ...acc, [s.id]: already[s.id] || 'PRESENT' }), {}));
     } catch (err) {
-      toast.error(err.message);
-      setRoster([]);
+      setError(err.message);
     }
   }, [batchId, date]);
 
@@ -106,7 +108,7 @@ function StudentMarking({ isStaff }) {
             </button>
           )}
         </div>
-        {!roster ? <Spinner /> : roster.length === 0 ? <Empty message="No students in this batch" /> : (
+        {error ? <ErrorNote message={error} onRetry={load} /> : !roster ? <Spinner /> : roster.length === 0 ? <Empty message="No students in this batch" /> : (
           <ul className="divide-y divide-slate-100 dark:divide-slate-800">
             {roster.map((s) => (
               <li key={s.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
@@ -130,20 +132,22 @@ function TeacherMarking() {
   const [date, setDate] = useState(today());
   const [marks, setMarks] = useState({});
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
 
   const load = useCallback(async () => {
+    setTeachers(null);
+    setError(null);
     try {
-      const [tRes, aRes] = await Promise.all([
-        api.get('/teachers'),
-        api.get('/attendance/teachers', { params: { date } }),
+      const [tData, aData] = await Promise.all([
+        getArray('/teachers'),
+        getArray('/attendance/teachers', { params: { date } }),
       ]);
       const already = {};
-      for (const row of aRes.data) already[row.teacherId] = row.status;
-      setTeachers(tRes.data);
-      setMarks(tRes.data.reduce((acc, t) => ({ ...acc, [t.id]: already[t.id] || 'PRESENT' }), {}));
+      for (const row of aData) already[row.teacherId] = row.status;
+      setTeachers(tData);
+      setMarks(tData.reduce((acc, t) => ({ ...acc, [t.id]: already[t.id] || 'PRESENT' }), {}));
     } catch (err) {
-      toast.error(err.message);
-      setTeachers([]);
+      setError(err.message);
     }
   }, [date]);
 
@@ -168,7 +172,7 @@ function TeacherMarking() {
         </button>
       </div>
       <div className="card overflow-hidden">
-        {!teachers ? <Spinner /> : teachers.length === 0 ? <Empty message="No teachers yet" /> : (
+        {error ? <ErrorNote message={error} onRetry={load} /> : !teachers ? <Spinner /> : teachers.length === 0 ? <Empty message="No teachers yet" /> : (
           <ul className="divide-y divide-slate-100 dark:divide-slate-800">
             {teachers.map((t) => (
               <li key={t.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
@@ -191,22 +195,23 @@ function AttendanceHistory() {
   const [batches, setBatches] = useState([]);
   const [filters, setFilters] = useState({ batchId: '', month: new Date().toISOString().slice(0, 7) });
   const [rows, setRows] = useState(null);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    api.get('/batches').then(({ data }) => setBatches(data)).catch(() => {});
+    getArray('/batches').then(setBatches).catch((err) => toast.error(err.message));
   }, []);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setRows(null);
+    setError(null);
     try {
-      const { data } = await api.get('/attendance/students', {
+      setRows(await getArray('/attendance/students', {
         params: { batchId: filters.batchId || undefined, month: filters.month || undefined },
-      });
-      setRows(data);
-    } catch (err) { toast.error(err.message); setRows([]); }
-  };
+      }));
+    } catch (err) { setError(err.message); }
+  }, [filters]);
 
-  useEffect(() => { load(); }, [filters]);
+  useEffect(() => { load(); }, [load]);
 
   return (
     <div className="space-y-4">
@@ -218,7 +223,7 @@ function AttendanceHistory() {
         <Field label="Month" type="month" value={filters.month} onChange={(e) => setFilters({ ...filters, month: e.target.value })} />
       </div>
       <div className="card overflow-x-auto">
-        {!rows ? <Spinner /> : rows.length === 0 ? <Empty message="No attendance records this month" /> : (
+        {error ? <ErrorNote message={error} onRetry={load} /> : !rows ? <Spinner /> : rows.length === 0 ? <Empty message="No attendance records this month" /> : (
           <table className="w-full">
             <thead className="bg-slate-50 dark:bg-slate-800/60">
               <tr>

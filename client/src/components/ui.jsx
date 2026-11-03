@@ -1,5 +1,5 @@
-import { createContext, useCallback, useContext, useState } from 'react';
-import { X, CheckCircle2, AlertCircle, Loader2, Inbox } from 'lucide-react';
+import { Component, createContext, useCallback, useContext, useState } from 'react';
+import { X, CheckCircle2, AlertCircle, AlertTriangle, Loader2, Inbox, RefreshCw } from 'lucide-react';
 
 /* ---------- Toasts ---------- */
 const ToastContext = createContext(null);
@@ -87,6 +87,58 @@ export function Empty({ message = 'Nothing here yet' }) {
       <p className="text-sm">{message}</p>
     </div>
   );
+}
+
+export function ErrorNote({ message, onRetry }) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
+      <AlertCircle size={36} className="text-rose-500" />
+      <p className="max-w-md text-sm font-medium text-rose-600 dark:text-rose-400">
+        {message || 'Could not load this list.'}
+      </p>
+      {onRetry && (
+        <button type="button" className="btn-ghost mt-1" onClick={onRetry}>
+          <RefreshCw size={16} /> Try again
+        </button>
+      )}
+    </div>
+  );
+}
+
+// One throw during render used to unmount the whole tree and leave a blank page. Anything that
+// still escapes the per-page error states stops here instead.
+export class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+
+  componentDidCatch(error, info) {
+    console.error('[ErrorBoundary]', error, info?.componentStack);
+  }
+
+  render() {
+    if (!this.state.error) return this.props.children;
+    return (
+      <div className="mx-auto flex max-w-xl flex-col items-center gap-3 px-4 py-20 text-center">
+        <AlertTriangle size={40} className="text-rose-500" />
+        <h2 className="text-xl font-bold text-slate-900 dark:text-white">This page hit an error</h2>
+        <p className="text-sm text-slate-500 dark:text-slate-400">{this.state.error.message}</p>
+        <div className="mt-2 flex gap-3">
+          <button type="button" className="btn-ghost" onClick={() => this.setState({ error: null })}>
+            <RefreshCw size={16} /> Retry this page
+          </button>
+          <button type="button" className="btn-primary" onClick={() => window.location.assign('/')}>
+            Go to home
+          </button>
+        </div>
+      </div>
+    );
+  }
 }
 
 const badgeColors = {

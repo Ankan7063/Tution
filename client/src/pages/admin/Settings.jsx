@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Settings as SettingsIcon, Loader2, Save, KeyRound, UserCog, Building2, Bell } from 'lucide-react';
-import api from '../../api/client.js';
+import api, { getArray, getObject, expectArray } from '../../api/client.js';
 import { useApp } from '../../context/AppContext.jsx';
 import { Field, SelectField, Spinner, useToast } from '../../components/ui.jsx';
 

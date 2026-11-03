@@ -6,6 +6,8 @@ import PublicLayout from './components/PublicLayout.jsx';
 import AdminLayout from './components/AdminLayout.jsx';
 import Home from './pages/public/Home.jsx';
 import Login from './pages/public/Login.jsx';
+import ForgotPassword from './pages/public/ForgotPassword.jsx';
+import Register from './pages/public/Register.jsx';
 import { About, Courses as PublicCourses, Teachers as PublicTeachers, Contact } from './pages/public/StaticPages.jsx';
 import Dashboard from './pages/admin/Dashboard.jsx';
 import { Students, NewAdmission, StudentDetail } from './pages/admin/Students.jsx';
@@ -61,6 +63,8 @@ export default function App() {
         <Route path="/contact" element={<Contact />} />
         <Route path="/login" element={<Login />} />
         <Route path="/admin/login" element={<Login admin />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/register" element={<Register />} />
       </Route>
 
       <Route path="/portal" element={<RequireStudent />} />

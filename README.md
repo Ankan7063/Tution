@@ -56,6 +56,27 @@ database name. `JWT_SECRET` should be a long random string:
 the demo passwords, so no credentials live in the JSON. Skip it for an empty centre — the
 first run of the API creates indexes automatically.
 
+## Demo accounts
+
+| Role | Email | Password | Sign in at |
+| --- | --- | --- | --- |
+| Admin (super) | `admin@tuitioncenter.com` | `Admin@123` | `/admin/login` |
+| Teacher | `teacher@tuitioncenter.com` | `Teacher@123` | `/admin/login` |
+| Student | `student@tuitioncenter.com` | `Student@123` | `/login` |
+
+The dataset also carries 20 students, 3 teachers, 4 courses, 3 batches, 600 attendance
+rows, 60 fee records with 44 payments and 2 exams.
+
+## Self-service auth
+
+- **Students can register themselves** at `/register` (name, email, password + optional
+  phone/class/parent/course). A `Student` record with the next admission number and a
+  `STUDENT` login are created together and the student lands in the portal. Admins get a
+  "New student registration" notification. Staff accounts are still created only by admins.
+- **Anyone can reset a forgotten password** at `/forgot-password` — admin, teacher or
+  student. A 6-digit code (10-minute validity, 5 attempts) is emailed when SMTP is
+  configured; with SMTP unset (demo setups) the code is shown on screen as `demoCode`.
+
 ## Running
 
 Two processes, in two terminals:

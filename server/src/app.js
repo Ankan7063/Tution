@@ -36,6 +36,8 @@ export function createApp() {
 
   const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 500 });
   app.use('/api', limiter);
+  const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 30 });
+  app.use('/api/auth', authLimiter);
 
   app.get('/api/health', (req, res) => res.json({ status: 'ok', db: mongoose.connection.readyState === 1 ? 'up' : 'down' }));
   app.use('/api/auth', authRoutes);

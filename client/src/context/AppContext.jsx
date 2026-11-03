@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import api from '../api/client.js';
+import api, { getObject } from '../api/client.js';
 
 const AppContext = createContext(null);
 
@@ -11,8 +11,7 @@ export function AppProvider({ children }) {
 
   const loadSettings = useCallback(async () => {
     try {
-      const { data } = await api.get('/settings');
-      setSettings(data);
+      setSettings(await getObject('/settings'));
     } catch {
       /* keep defaults */
     }
@@ -26,18 +25,19 @@ export function AppProvider({ children }) {
 
   useEffect(() => {
     if (!localStorage.getItem('tc_token')) return;
-    api.get('/auth/me')
-      .then(({ data }) => setUser(data))
+    getObject('/auth/me')
+      .then(setUser)
       .catch(() => localStorage.removeItem('tc_token'))
       .finally(() => setAuthLoading(false));
   }, []);
 
   const login = async (email, password) => {
     const { data } = await api.post('/auth/login', { email, password });
+    if (!data?.token) throw new Error('Login did not return a token');
     localStorage.setItem('tc_token', data.token);
-    const me = await api.get('/auth/me');
-    setUser(me.data);
-    return me.data;
+    const me = await getObject('/auth/me');
+    setUser(me);
+    return me;
   };
 
   const logout = () => {

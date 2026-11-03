@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { BarChart3, Download, Printer } from 'lucide-react';
-import api from '../../api/client.js';
+import { getArray, getObject, expectArray } from '../../api/client.js';
 import { useApp, money } from '../../context/AppContext.jsx';
-import { Spinner, Empty, Field, SelectField, Badge, useToast } from '../../components/ui.jsx';
+import { Spinner, Empty, Field, SelectField, Badge, useToast, ErrorNote } from '../../components/ui.jsx';
 
 const REPORTS = [
   ['fees', 'Fee Statement'],
@@ -74,42 +74,42 @@ export default function Reports() {
   const [rows, setRows] = useState(null);
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    api.get('/courses').then(({ data }) => setCourses(data)).catch(() => {});
-    api.get('/batches').then(({ data }) => setBatches(data)).catch(() => {});
-    api.get('/examinations').then(({ data }) => { setExams(data); if (data.length) setFilters((f) => ({ ...f, examId: f.examId || data[0].id })); }).catch(() => {});
+    getArray('/courses').then(setCourses).catch((err) => toast.error(err.message));
+    getArray('/batches').then(setBatches).catch((err) => toast.error(err.message));
+    getArray('/examinations').then((data) => { setExams(data); if (data.length) setFilters((f) => ({ ...f, examId: f.examId || data[0].id })); }).catch((err) => toast.error(err.message));
   }, []);
 
   const run = useCallback(async () => {
     setLoading(true);
     setRows(null);
+    setSummary(null);
+    setError(null);
     const clean = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== '' && v != null));
     try {
       if (kind === 'fees') {
-        const { data } = await api.get('/reports/fees', { params: clean({ from: filters.from, to: filters.to, courseId: filters.courseId, batchId: filters.batchId, status: filters.status }) });
-        setRows(data.rows); setSummary(data.summary);
+        const data = await getObject('/reports/fees', clean({ from: filters.from, to: filters.to, courseId: filters.courseId, batchId: filters.batchId, status: filters.status }));
+        setRows(expectArray(data.rows, 'report rows')); setSummary(data.summary);
       } else if (kind === 'collection') {
-        const { data } = await api.get('/reports/collection', { params: clean({ from: filters.from, to: filters.to, courseId: filters.courseId, batchId: filters.batchId, method: filters.method }) });
-        setRows(data.rows); setSummary(data.summary);
+        const data = await getObject('/reports/collection', clean({ from: filters.from, to: filters.to, courseId: filters.courseId, batchId: filters.batchId, method: filters.method }));
+        setRows(expectArray(data.rows, 'report rows')); setSummary(data.summary);
       } else if (kind === 'attendance') {
-        const { data } = await api.get('/reports/attendance', { params: clean({ from: filters.from, to: filters.to, batchId: filters.batchId }) });
-        setRows(data); setSummary(null);
+        setRows(await getArray('/reports/attendance', clean({ from: filters.from, to: filters.to, batchId: filters.batchId }))); setSummary(null);
       } else if (kind === 'students') {
-        const { data } = await api.get('/reports/students', { params: clean({ courseId: filters.courseId, batchId: filters.batchId, status: filters.status }) });
-        setRows(data); setSummary(null);
+        setRows(await getArray('/reports/students', clean({ courseId: filters.courseId, batchId: filters.batchId, status: filters.status }))); setSummary(null);
       } else if (kind === 'teachers') {
-        const { data } = await api.get('/reports/teachers');
-        setRows(data); setSummary(null);
+        setRows(await getArray('/reports/teachers')); setSummary(null);
       } else if (kind === 'exam') {
         if (!filters.examId) { setRows([]); setLoading(false); return; }
-        const { data } = await api.get(`/reports/exams/${filters.examId}`);
-        setRows(data.rows);
-        setSummary({ exam: data.exam.name, totalMarks: data.exam.totalMarks, count: data.rows.length });
+        const data = await getObject(`/reports/exams/${filters.examId}`);
+        const list = expectArray(data.rows, 'report rows');
+        setRows(list);
+        setSummary({ exam: data.exam.name, totalMarks: data.exam.totalMarks, count: list.length });
       }
     } catch (err) {
-      toast.error(err.message);
-      setRows([]);
+      setError(err.message);
     } finally {
       setLoading(false);
     }
@@ -121,6 +121,7 @@ export default function Reports() {
   const centerName = settings?.centerName || 'Tuition Center';
 
   const downloadCsv = () => {
+    if (!Array.isArray(rows)) { toast.error('Report data is not ready yet'); return; }
     const blob = new Blob([toCsv(columns, rows)], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -227,7 +228,7 @@ export default function Reports() {
           <p className="text-lg font-extrabold">{centerName}</p>
           <p className="text-xs text-slate-500">{REPORTS.find(([k]) => k === kind)[1]} · generated {new Date().toLocaleString('en-IN')}</p>
         </div>
-        {loading ? <Spinner label="Building report…" /> : !rows || rows.length === 0 ? <Empty message="No data for the selected filters" /> : (
+        {error ? <ErrorNote message={error} onRetry={run} /> : loading ? <Spinner label="Building report…" /> : !rows || rows.length === 0 ? <Empty message="No data for the selected filters" /> : (
           <table className="w-full">
             <thead className="bg-slate-50 dark:bg-slate-800/60">
               <tr>{columns.map(([path, header]) => <th key={path} className="th">{header}</th>)}</tr>

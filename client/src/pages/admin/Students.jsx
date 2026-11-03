@@ -1,9 +1,9 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Plus, Search, Pencil, Trash2, ArrowLeft, Loader2, Phone, MessageCircle, Mail, CalendarCheck, FileText } from 'lucide-react';
-import api from '../../api/client.js';
+import api, { getArray, getObject, expectArray } from '../../api/client.js';
 import { useApp, money, waLink } from '../../context/AppContext.jsx';
-import { Modal, Confirm, Spinner, Empty, Badge, Field, SelectField, useToast, Avatar } from '../../components/ui.jsx';
+import { Modal, Confirm, Spinner, Empty, ErrorNote, Badge, Field, SelectField, useToast, Avatar } from '../../components/ui.jsx';
 
 const emptyForm = {
   name: '', gender: '', dob: '', phone: '', email: '', parentName: '', parentPhone: '',
@@ -88,6 +88,7 @@ export function StudentFormModal({ open, onClose, onSaved, student, courses, bat
 export function Students() {
   const toast = useToast();
   const [data, setData] = useState(null);
+  const [error, setError] = useState(null);
   const [courses, setCourses] = useState([]);
   const [batches, setBatches] = useState([]);
   const [filters, setFilters] = useState({ search: '', courseId: '', batchId: '', status: '', page: 1 });
@@ -96,15 +97,19 @@ export function Students() {
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
-    const params = new URLSearchParams(Object.entries(filters).filter(([, v]) => v));
-    const { data } = await api.get(`/students?${params}`);
-    setData(data);
+    setError(null);
+    try {
+      const params = new URLSearchParams(Object.entries(filters).filter(([, v]) => v));
+      const body = await getObject(`/students?${params}`);
+      expectArray(body.rows, '/students rows');
+      setData(body);
+    } catch (err) { setError(err.message); }
   }, [filters]);
 
-  useEffect(() => { load().catch((e) => toast.error(e.message)); }, [load]);
+  useEffect(() => { load(); }, [load]);
   useEffect(() => {
-    api.get('/courses').then(({ data }) => setCourses(data)).catch(() => {});
-    api.get('/batches').then(({ data }) => setBatches(data)).catch(() => {});
+    getArray('/courses').then(setCourses).catch((e) => toast.error(e.message));
+    getArray('/batches').then(setBatches).catch((e) => toast.error(e.message));
   }, []);
 
   const remove = async () => {

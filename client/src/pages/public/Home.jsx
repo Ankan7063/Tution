@@ -1,19 +1,31 @@
 import { Link } from 'react-router-dom';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ArrowRight, BookOpen, Users, Trophy, Clock, Star, MessageCircle, Phone, Mail, GraduationCap, CheckCircle2 } from 'lucide-react';
-import api from '../../api/client.js';
+import { getArray } from '../../api/client.js';
 import { useApp, money, waLink } from '../../context/AppContext.jsx';
-import { Avatar } from '../../components/ui.jsx';
+import { Avatar, Empty, ErrorNote, Spinner } from '../../components/ui.jsx';
 
 export default function Home() {
   const { settings } = useApp();
-  const [courses, setCourses] = useState([]);
-  const [announcements, setAnnouncements] = useState([]);
+  const [courses, setCourses] = useState(null);
+  const [announcements, setAnnouncements] = useState(null);
+  const [coursesError, setCoursesError] = useState(null);
+  const [noticesError, setNoticesError] = useState(null);
 
-  useEffect(() => {
-    api.get('/courses').then(({ data }) => setCourses(data.filter((c) => c.isActive).slice(0, 3))).catch(() => {});
-    api.get('/announcements').then(({ data }) => setAnnouncements(data.slice(0, 3))).catch(() => {});
+  const load = useCallback(() => {
+    setCourses(null);
+    setAnnouncements(null);
+    setCoursesError(null);
+    setNoticesError(null);
+    getArray('/courses')
+      .then((rows) => setCourses(rows.filter((c) => c.isActive).slice(0, 3)))
+      .catch((err) => setCoursesError(err.message));
+    getArray('/announcements')
+      .then((rows) => setAnnouncements(rows.slice(0, 3)))
+      .catch((err) => setNoticesError(err.message));
   }, []);
+
+  useEffect(load, [load]);
 
   return (
     <div>
@@ -59,10 +71,10 @@ export default function Home() {
       </section>
 
       {/* Announcements */}
-      {announcements.length > 0 && (
+      {(noticesError || announcements?.length > 0) && (
         <section className="mx-auto max-w-7xl px-4 pt-10">
           <div className="card divide-y divide-slate-100 dark:divide-slate-800">
-            {announcements.map((a) => (
+            {noticesError ? <ErrorNote message={noticesError} onRetry={load} /> : announcements.map((a) => (
               <div key={a.id} className="flex items-start gap-3 px-5 py-4">
                 <span className="badge mt-0.5 bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">Notice</span>
                 <div>
@@ -107,6 +119,10 @@ export default function Home() {
             </div>
             <Link to="/courses" className="btn-secondary hidden sm:inline-flex">View all <ArrowRight size={16} /></Link>
           </div>
+          {coursesError ? <ErrorNote message={coursesError} onRetry={load} />
+            : courses === null ? <Spinner label="Loading courses…" />
+            : courses.length === 0 ? <Empty message="No courses have been published yet" />
+            : (
           <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {courses.map((c) => (
               <div key={c.id} className="card flex flex-col p-6 transition-transform hover:-translate-y-1">
@@ -120,6 +136,7 @@ export default function Home() {
               </div>
             ))}
           </div>
+            )}
           <Link to="/courses" className="btn-secondary mt-6 sm:hidden">View all courses</Link>
         </div>
       </section>

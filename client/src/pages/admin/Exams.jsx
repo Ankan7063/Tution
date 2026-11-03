@@ -1,8 +1,8 @@
 import { Fragment, useCallback, useEffect, useState } from 'react';
 import { Plus, Pencil, Trash2, Loader2, FileText, ClipboardList, Send, Trophy } from 'lucide-react';
-import api from '../../api/client.js';
+import api, { getArray, getObject, expectArray } from '../../api/client.js';
 import { useApp } from '../../context/AppContext.jsx';
-import { Modal, Confirm, Spinner, Empty, Field, SelectField, Badge, Avatar, useToast } from '../../components/ui.jsx';
+import { Modal, Confirm, Spinner, Empty, ErrorNote, Field, SelectField, Badge, Avatar, useToast } from '../../components/ui.jsx';
 
 const emptyExam = { name: '', courseId: '', batchId: '', examDate: new Date().toISOString().slice(0, 10), totalMarks: 100 };
 
@@ -59,29 +59,32 @@ function ResultsModal({ open, onClose, exam, subjects }) {
   const toast = useToast();
   const [rows, setRows] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
 
   const load = useCallback(async () => {
     if (!exam) return;
     setRows(null);
+    setError(null);
     try {
       const studentsParams = exam.batchId ? { batchId: exam.batchId, limit: 300 }
         : exam.courseId ? { courseId: exam.courseId, limit: 300 }
         : { limit: 300, status: 'ACTIVE' };
-      const [studentsRes, existingRes] = await Promise.all([
-        api.get('/students', { params: studentsParams }),
-        api.get(`/examinations/${exam.id}/results`),
+      const [studentsBody, examBody] = await Promise.all([
+        getObject('/students', { params: studentsParams }),
+        getObject(`/examinations/${exam.id}/results`),
       ]);
+      const results = expectArray(examBody.results, 'exam results');
+      const students = expectArray(studentsBody.rows, '/students rows');
       const byStudent = {};
-      for (const r of existingRes.data.results) byStudent[r.studentId] = r;
-      setRows(studentsRes.data.rows.map((s) => ({
+      for (const r of results) byStudent[r.studentId] = r;
+      setRows(students.map((s) => ({
         student: s,
         subjectId: byStudent[s.id]?.subjectId || '',
         marks: byStudent[s.id] ? String(byStudent[s.id].marksObtained) : '',
         remarks: byStudent[s.id]?.remarks || '',
       })));
     } catch (err) {
-      toast.error(err.message);
-      setRows([]);
+      setError(err.message);
     }
   }, [exam]);
 
@@ -105,7 +108,7 @@ function ResultsModal({ open, onClose, exam, subjects }) {
 
   return (
     <Modal open={open} onClose={onClose} title={`Marks Entry — ${exam?.name || ''}`} wide>
-      {!rows ? <Spinner label="Loading roster…" /> : rows.length === 0 ? <Empty message="No students linked to this exam's course or batch" /> : (
+      {error ? <ErrorNote message={error} onRetry={load} /> : !rows ? <Spinner label="Loading roster…" /> : rows.length === 0 ? <Empty message="No students linked to this exam's course or batch" /> : (
         <>
           <div className="mb-3 text-sm text-slate-500 dark:text-slate-400">Total marks: <span className="font-bold text-slate-800 dark:text-slate-200">{exam.totalMarks}</span></div>
           <div className="max-h-[50vh] overflow-y-auto rounded-xl border border-slate-100 dark:border-slate-800">

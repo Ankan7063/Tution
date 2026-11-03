@@ -13,6 +13,30 @@ import { validate, ApiError } from '../middleware/validate.js';
 import { applyIds, contains, pick, startsWith } from '../utils/students-serde.js';
 
 const router = Router();
+
+// The public site lists faculty for visitors who hold no session, so this read-only directory
+// is registered ahead of the auth guard and returns only what a parent is meant to see.
+router.get('/public', async (req, res, next) => {
+  try {
+    const teachers = await Teacher.find({ status: 'ACTIVE' })
+      .populate(['subjects'])
+      .sort({ name: 1 });
+    res.json(teachers.map((teacher) => {
+      const row = teacher.toJSON();
+      return {
+        id: row.id,
+        name: row.name,
+        specialization: row.specialization,
+        employeeNo: row.employeeNo,
+        status: row.status,
+        subjects: pick(row.subjects ?? [], ['id', 'name']),
+      };
+    }));
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.use(authenticate);
 
 const teacherSchema = z.object({

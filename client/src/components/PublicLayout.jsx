@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, NavLink, Outlet } from 'react-router-dom';
 import { GraduationCap, Menu, X, Phone, Mail, Globe, MessageCircle } from 'lucide-react';
 import { useApp, waLink } from '../context/AppContext.jsx';
+import { ErrorBoundary } from './ui.jsx';
 
 function ContactButtons({ settings, compact = false }) {
   const cls = compact
@@ -53,6 +54,7 @@ export default function PublicLayout() {
           </Link>
           <nav className="hidden items-center gap-1 md:flex">
             {links.map(([to, label]) => <NavLink key={to} to={to} className={navCls}>{label}</NavLink>)}
+            <NavLink to="/register" className={navCls}>Register</NavLink>
             <NavLink to="/login" className={navCls}>Student Login</NavLink>
             <Link to={user ? (user.role === 'STUDENT' ? '/portal' : '/admin') : '/admin/login'}
               className="btn-primary ml-2">
@@ -70,6 +72,7 @@ export default function PublicLayout() {
               {links.map(([to, label]) => (
                 <NavLink key={to} to={to} className={navCls} onClick={() => setOpen(false)}>{label}</NavLink>
               ))}
+              <NavLink to="/register" className={navCls} onClick={() => setOpen(false)}>Student Register</NavLink>
               <NavLink to="/login" className={navCls} onClick={() => setOpen(false)}>Student Login</NavLink>
               <Link to="/admin/login" className="btn-primary mt-2" onClick={() => setOpen(false)}>Admin Login</Link>
             </div>
@@ -77,7 +80,7 @@ export default function PublicLayout() {
         )}
       </header>
 
-      <main><Outlet /></main>
+      <main><ErrorBoundary><Outlet /></ErrorBoundary></main>
 
       <footer className="mt-20 bg-slate-900 text-slate-300">
         <div className="mx-auto grid max-w-7xl gap-10 px-4 py-14 sm:grid-cols-2 lg:grid-cols-4">
@@ -99,7 +102,9 @@ export default function PublicLayout() {
               {links.map(([to, label]) => (
                 <li key={to}><Link to={to} className="hover:text-white">{label}</Link></li>
               ))}
+              <li><Link to="/register" className="hover:text-white">Student Register</Link></li>
               <li><Link to="/login" className="hover:text-white">Student Login</Link></li>
+              <li><Link to="/forgot-password" className="hover:text-white">Forgot Password</Link></li>
             </ul>
           </div>
           <div>

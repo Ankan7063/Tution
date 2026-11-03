@@ -1,8 +1,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Plus, Pencil, Trash2, Loader2, BookOpen } from 'lucide-react';
-import api from '../../api/client.js';
+import api, { getArray, expectArray } from '../../api/client.js';
 import { useApp, money } from '../../context/AppContext.jsx';
-import { Modal, Confirm, Spinner, Empty, Field, SelectField, useToast } from '../../components/ui.jsx';
+import { Modal, Confirm, Spinner, Empty, ErrorNote, Field, SelectField, useToast } from '../../components/ui.jsx';
 
 const emptyCourse = { name: '', code: '', description: '', duration: '', monthlyFee: '', admissionFee: '', isActive: true };
 
@@ -103,6 +103,7 @@ export default function Courses() {
   const { settings } = useApp();
   const toast = useToast();
   const [rows, setRows] = useState(null);
+  const [error, setError] = useState(null);
   const [teachers, setTeachers] = useState([]);
   const [courseModal, setCourseModal] = useState({ open: false, course: null });
   const [subjectModal, setSubjectModal] = useState({ open: false, subject: null });
@@ -110,12 +111,15 @@ export default function Courses() {
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
-    const { data } = await api.get('/courses');
-    setRows(data);
+    setError(null);
+    try {
+      const data = await getArray('/courses');
+      setRows(data.map((c) => ({ ...c, subjects: expectArray(c.subjects ?? [], '/courses subjects') })));
+    } catch (err) { setError(err.message); }
   }, []);
   useEffect(() => {
-    load().catch((e) => toast.error(e.message));
-    api.get('/teachers').then(({ data }) => setTeachers(data)).catch(() => {});
+    load();
+    getArray('/teachers').then(setTeachers).catch((err) => setError(err.message));
   }, [load]);
 
   const remove = async () => {
@@ -137,7 +141,8 @@ export default function Courses() {
         </div>
       </div>
 
-      {!rows ? <Spinner /> : rows.length === 0 ? <div className="card"><Empty message="No courses yet" /></div> : (
+      {error ? <ErrorNote message={error} onRetry={load} />
+        : !rows ? <Spinner /> : rows.length === 0 ? <div className="card"><Empty message="No courses yet" /></div> : (
         <div className="grid gap-4 lg:grid-cols-2">
           {rows.map((c) => (
             <div key={c.id} className="card p-5">
@@ -163,8 +168,8 @@ export default function Courses() {
               <div className="mt-3 border-t border-slate-100 pt-3 dark:border-slate-800">
                 <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">Subjects</p>
                 <div className="flex flex-wrap gap-1.5">
-                  {(c.subjects || []).length === 0 && <span className="text-xs text-slate-400">No subjects added</span>}
-                  {(c.subjects || []).map((s) => (
+                  {c.subjects.length === 0 && <span className="text-xs text-slate-400">No subjects added</span>}
+                  {c.subjects.map((s) => (
                     <span key={s.id} className="badge bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
                       {s.name}{s.teacher ? ` · ${s.teacher.name}` : ''}
                       <button className="ml-1 text-slate-400 hover:text-rose-500" onClick={() => setDel({ kind: 'subject', id: s.id, name: s.name })} aria-label="Delete subject">×</button>

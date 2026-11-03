@@ -1,8 +1,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Plus, Search, Pencil, Trash2, Loader2, Phone, MessageCircle, Mail } from 'lucide-react';
-import api from '../../api/client.js';
+import api, { getArray, expectArray } from '../../api/client.js';
 import { useApp, money, waLink } from '../../context/AppContext.jsx';
-import { Modal, Confirm, Spinner, Empty, Badge, Field, SelectField, useToast, Avatar } from '../../components/ui.jsx';
+import { Modal, Confirm, Spinner, Empty, ErrorNote, Badge, Field, SelectField, useToast, Avatar } from '../../components/ui.jsx';
 
 const emptyForm = { name: '', phone: '', email: '', specialization: '', salary: '', status: 'ACTIVE' };
 
@@ -57,16 +57,24 @@ export default function Teachers() {
   const { settings } = useApp();
   const toast = useToast();
   const [rows, setRows] = useState(null);
+  const [error, setError] = useState(null);
   const [search, setSearch] = useState('');
   const [modal, setModal] = useState({ open: false, teacher: null });
   const [del, setDel] = useState(null);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
-    const { data } = await api.get(`/teachers${search ? `?search=${encodeURIComponent(search)}` : ''}`);
-    setRows(data);
+    setError(null);
+    try {
+      const data = await getArray(`/teachers${search ? `?search=${encodeURIComponent(search)}` : ''}`);
+      setRows(data.map((t) => ({
+        ...t,
+        batches: expectArray(t.batches ?? [], '/teachers batches'),
+        subjects: expectArray(t.subjects ?? [], '/teachers subjects'),
+      })));
+    } catch (err) { setError(err.message); }
   }, [search]);
-  useEffect(() => { load().catch((e) => toast.error(e.message)); }, [load]);
+  useEffect(() => { load(); }, [load]);
 
   const remove = async () => {
     setBusy(true);
@@ -89,7 +97,8 @@ export default function Teachers() {
         </div>
       </div>
 
-      {!rows ? <Spinner /> : rows.length === 0 ? <div className="card"><Empty message="No teachers found" /></div> : (
+      {error ? <ErrorNote message={error} onRetry={load} />
+        : !rows ? <Spinner /> : rows.length === 0 ? <div className="card"><Empty message="No teachers found" /></div> : (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {rows.map((t) => (
             <div key={t.id} className="card p-5">
@@ -104,8 +113,8 @@ export default function Teachers() {
                 <Badge value={t.status} />
               </div>
               <div className="mt-3 flex flex-wrap gap-1.5">
-                {(t.batches || []).map((b) => <span key={b.id} className="badge bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300">{b.name}</span>)}
-                {(t.subjects || []).map((s) => <span key={s.id} className="badge bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">{s.name}</span>)}
+                {t.batches.map((b) => <span key={b.id} className="badge bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300">{b.name}</span>)}
+                {t.subjects.map((s) => <span key={s.id} className="badge bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">{s.name}</span>)}
               </div>
               <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">Salary: <span className="font-bold text-slate-700 dark:text-slate-200">{money(t.salary, settings)}</span>/month</p>
               <div className="mt-4 flex items-center gap-2 border-t border-slate-100 pt-4 dark:border-slate-800">

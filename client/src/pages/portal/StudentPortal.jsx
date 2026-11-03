@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { GraduationCap, LogOut, CalendarCheck, Wallet, FileText, Moon, Sun, MessageCircle, Phone, Mail, User } from 'lucide-react';
-import api from '../../api/client.js';
+import { getArray, getObject, expectArray } from '../../api/client.js';
 import { useApp, money, waLink } from '../../context/AppContext.jsx';
-import { Spinner, Badge, Avatar, Empty } from '../../components/ui.jsx';
+import { Spinner, Badge, Avatar, Empty, ErrorNote } from '../../components/ui.jsx';
 
 const tabs = [['overview', 'Overview'], ['attendance', 'Attendance'], ['fees', 'Fees'], ['results', 'Results'], ['notices', 'Notices']];
 
@@ -12,14 +12,29 @@ export default function StudentPortal() {
   const navigate = useNavigate();
   const [student, setStudent] = useState(null);
   const [notices, setNotices] = useState([]);
+  const [error, setError] = useState(null);
   const [tab, setTab] = useState('overview');
 
-  useEffect(() => {
+  const load = useCallback(() => {
     const id = user?.student?.id;
     if (!id) return;
-    api.get(`/students/${id}`).then(({ data }) => setStudent(data)).catch(() => setStudent({}));
-    api.get('/announcements').then(({ data }) => setNotices(data.filter((a) => a.audience !== 'TEACHERS'))).catch(() => {});
+    setStudent(null);
+    setError(null);
+    getObject(`/students/${id}`)
+      .then((data) => setStudent({
+        ...data,
+        attendance: expectArray(data.attendance, `/students/${id} attendance`),
+        feeRecords: expectArray(data.feeRecords, `/students/${id} feeRecords`),
+        payments: expectArray(data.payments, `/students/${id} payments`),
+        examResults: expectArray(data.examResults, `/students/${id} examResults`),
+      }))
+      .catch((err) => setError(err.message));
+    getArray('/announcements')
+      .then((rows) => setNotices(rows.filter((a) => a.audience !== 'TEACHERS')))
+      .catch(() => {});
   }, [user]);
+
+  useEffect(() => { load(); }, [load]);
 
   if (!user?.student?.id) {
     return (
@@ -30,16 +45,17 @@ export default function StudentPortal() {
       </div>
     );
   }
+  if (error) return <div className="card mx-auto my-16 max-w-2xl p-4"><ErrorNote message={error} onRetry={load} /></div>;
   if (!student) return <Spinner label="Loading your dashboard…" />;
 
-  const attendance = student.attendance || [];
+  const attendance = student.attendance;
   const present = attendance.filter((a) => a.status === 'PRESENT' || a.status === 'LATE').length;
   const attendancePct = attendance.length ? Math.round((present / attendance.length) * 100) : 0;
 
-  const feeTotal = (student.feeRecords || []).reduce((s, r) => s + Number(r.amount) + Number(r.lateFee) - Number(r.discount), 0);
-  const feePaid = (student.payments || []).reduce((s, p) => s + Number(p.amount), 0);
+  const feeTotal = student.feeRecords.reduce((s, r) => s + Number(r.amount) + Number(r.lateFee) - Number(r.discount), 0);
+  const feePaid = student.payments.reduce((s, p) => s + Number(p.amount), 0);
 
-  const results = student.examResults || [];
+  const results = student.examResults;
 
   return (
     <div className="min-h-screen">
@@ -124,9 +140,9 @@ export default function StudentPortal() {
                 </div>
               )}
               <h3 className="mb-2 mt-5 font-bold text-slate-900 dark:text-white">Recent Payments</h3>
-              {(student.payments || []).length === 0 && <p className="text-sm text-slate-400">No payments recorded yet.</p>}
+              {student.payments.length === 0 && <p className="text-sm text-slate-400">No payments recorded yet.</p>}
               <ul className="divide-y divide-slate-100 text-sm dark:divide-slate-800">
-                {(student.payments || []).slice(0, 5).map((p) => (
+                {student.payments.slice(0, 5).map((p) => (
                   <li key={p.id} className="flex items-center justify-between py-2">
                     <span className="font-mono text-xs text-slate-400">{p.receiptNo}</span>
                     <span className="text-xs text-slate-400">{new Date(p.paymentDate).toLocaleDateString('en-IN')}</span>

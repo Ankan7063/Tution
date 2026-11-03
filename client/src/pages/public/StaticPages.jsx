@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { GraduationCap, MapPin, Phone, Mail, Globe, MessageCircle, Users, Target, HeartHandshake, Send } from 'lucide-react';
-import api from '../../api/client.js';
+import { getArray } from '../../api/client.js';
 import { useApp, money, waLink } from '../../context/AppContext.jsx';
-import { Avatar, Spinner, useToast } from '../../components/ui.jsx';
+import { Avatar, Empty, ErrorNote, Spinner, useToast } from '../../components/ui.jsx';
 
 export function About() {
   return (
@@ -36,14 +36,21 @@ export function About() {
 export function Courses() {
   const { settings } = useApp();
   const [courses, setCourses] = useState(null);
-  useEffect(() => { api.get('/courses').then(({ data }) => setCourses(data)).catch(() => setCourses([])); }, []);
+  const [error, setError] = useState(null);
+  const load = useCallback(() => {
+    setCourses(null);
+    setError(null);
+    getArray('/courses').then(setCourses).catch((err) => setError(err.message));
+  }, []);
+  useEffect(load, [load]);
+  const active = (courses || []).filter((c) => c.isActive);
   return (
     <div className="mx-auto max-w-7xl px-4 py-14">
       <h1 className="text-4xl font-extrabold text-slate-900 dark:text-white">Our Courses</h1>
       <p className="mt-2 text-slate-500 dark:text-slate-400">Structured programmes for every class and subject.</p>
-      {!courses ? <Spinner /> : (
+      {error ? <ErrorNote message={error} onRetry={load} /> : !courses ? <Spinner /> : active.length === 0 ? <Empty message="No courses have been published yet" /> : (
         <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {courses.filter((c) => c.isActive).map((c) => (
+          {active.map((c) => (
             <div key={c.id} className="card flex flex-col p-6 transition-transform hover:-translate-y-1">
               <div className="flex items-center justify-between">
                 <span className="badge bg-brand-100 text-brand-700 dark:bg-brand-900/40 dark:text-brand-300">{c.code}</span>
@@ -73,14 +80,21 @@ export function Courses() {
 
 export function Teachers() {
   const [teachers, setTeachers] = useState(null);
-  useEffect(() => { api.get('/teachers').then(({ data }) => setTeachers(data)).catch(() => setTeachers([])); }, []);
+  const [error, setError] = useState(null);
+  const load = useCallback(() => {
+    setTeachers(null);
+    setError(null);
+    getArray('/teachers/public').then(setTeachers).catch((err) => setError(err.message));
+  }, []);
+  useEffect(load, [load]);
+  const active = (teachers || []).filter((t) => t.status === 'ACTIVE');
   return (
     <div className="mx-auto max-w-7xl px-4 py-14">
       <h1 className="text-4xl font-extrabold text-slate-900 dark:text-white">Our Teachers</h1>
       <p className="mt-2 text-slate-500 dark:text-slate-400">Experienced subject specialists who care about every student.</p>
-      {!teachers ? <Spinner /> : (
+      {error ? <ErrorNote message={error} onRetry={load} /> : !teachers ? <Spinner /> : active.length === 0 ? <Empty message="No teachers have been listed yet" /> : (
         <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {teachers.filter((t) => t.status === 'ACTIVE').map((t) => (
+          {active.map((t) => (
             <div key={t.id} className="card p-6 text-center transition-transform hover:-translate-y-1">
               <div className="flex justify-center"><Avatar name={t.name} size="lg" /></div>
               <h3 className="mt-4 font-bold text-slate-900 dark:text-white">{t.name}</h3>

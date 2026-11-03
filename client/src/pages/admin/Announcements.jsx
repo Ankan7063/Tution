@@ -1,19 +1,24 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Megaphone, Plus, Trash2, Loader2, Users, UserCheck, Globe } from 'lucide-react';
-import api from '../../api/client.js';
-import { Modal, Confirm, Spinner, Empty, Field, SelectField, useToast } from '../../components/ui.jsx';
+import api, { getArray } from '../../api/client.js';
+import { Modal, Confirm, Spinner, Empty, Field, SelectField, useToast, ErrorNote } from '../../components/ui.jsx';
 
 const audienceIcon = { ALL: Globe, STUDENTS: Users, TEACHERS: UserCheck };
 
 export default function Announcements() {
   const toast = useToast();
   const [rows, setRows] = useState(null);
+  const [error, setError] = useState(null);
   const [open, setOpen] = useState(false);
   const [del, setDel] = useState(null);
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState({ title: '', message: '', audience: 'ALL', expiresAt: '' });
 
-  const load = useCallback(() => api.get('/announcements').then(({ data }) => setRows(data)).catch((e) => { toast.error(e.message); setRows([]); }), []);
+  const load = useCallback(() => {
+    setRows(null);
+    setError(null);
+    getArray('/announcements').then(setRows).catch((err) => setError(err.message));
+  }, []);
 
   useEffect(() => { load(); }, [load]);
 
@@ -48,7 +53,7 @@ export default function Announcements() {
         <button className="btn-primary" onClick={() => setOpen(true)}><Plus size={16} /> New Announcement</button>
       </div>
 
-      {!rows ? <Spinner /> : rows.length === 0 ? <div className="card"><Empty message="No active announcements" /></div> : (
+      {error ? <ErrorNote message={error} onRetry={load} /> : !rows ? <Spinner /> : rows.length === 0 ? <div className="card"><Empty message="No active announcements" /></div> : (
         <div className="grid gap-4 lg:grid-cols-2">
           {rows.map((a) => {
             const Icon = audienceIcon[a.audience] || Globe;

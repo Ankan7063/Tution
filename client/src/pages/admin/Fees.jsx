@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { IndianRupee, Plus, Trash2, Loader2, Receipt, Wand2, FileDown, Wallet, AlertTriangle } from 'lucide-react';
-import api from '../../api/client.js';
+import api, { getArray, getObject, expectArray } from '../../api/client.js';
 import { useApp, money } from '../../context/AppContext.jsx';
-import { Modal, Confirm, Spinner, Empty, Field, SelectField, Badge, Avatar, useToast } from '../../components/ui.jsx';
+import { Modal, Confirm, Spinner, Empty, ErrorNote, Field, SelectField, Badge, Avatar, useToast } from '../../components/ui.jsx';
 
 const METHODS = ['CASH', 'UPI', 'CARD', 'BANK_TRANSFER', 'ONLINE'];
 
 const dueOf = (r) => Number(r.amount) + Number(r.lateFee) - Number(r.discount);
-const paidOf = (r) => (r.payments || []).reduce((s, p) => s + Number(p.amount), 0);
+const paidOf = (r) => r.payments.reduce((s, p) => s + Number(p.amount), 0);
 
 function SummaryCard({ label, value, Icon, grad }) {
   return (
@@ -179,6 +179,7 @@ export default function Fees() {
   const [students, setStudents] = useState([]);
   const [records, setRecords] = useState(null);
   const [payments, setPayments] = useState(null);
+  const [error, setError] = useState(null);
   const [filter, setFilter] = useState({ status: '', overdue: false });
   const [paymentFilter, setPaymentFilter] = useState({ from: '', to: '' });
   const [recordModal, setRecordModal] = useState(false);
@@ -187,29 +188,32 @@ export default function Fees() {
   const [del, setDel] = useState(null);
   const [busy, setBusy] = useState(false);
 
-  const loadSummary = useCallback(() => api.get('/fees/summary').then(({ data }) => setSummary(data)).catch(() => {}), []);
+  const loadSummary = useCallback(() => getObject('/fees/summary').then(setSummary).catch(() => {}), []);
   const loadRecords = useCallback(async () => {
     setRecords(null);
+    setError(null);
     try {
-      const { data } = await api.get('/fees/records', {
-        params: { status: filter.status || undefined, overdue: filter.overdue ? 'true' : undefined },
+      const rows = await getArray('/fees/records', {
+        status: filter.status || undefined, overdue: filter.overdue ? 'true' : undefined,
       });
-      setRecords(data);
-    } catch (err) { toast.error(err.message); setRecords([]); }
+      setRecords(rows.map((r) => ({ ...r, payments: expectArray(r.payments, '/fees/records payments') })));
+    } catch (err) { setError(err.message); setRecords([]); }
   }, [filter]);
   const loadPayments = useCallback(async () => {
     setPayments(null);
+    setError(null);
     try {
-      const { data } = await api.get('/fees/payments', {
-        params: { from: paymentFilter.from || undefined, to: paymentFilter.to || undefined },
-      });
-      setPayments(data);
-    } catch (err) { toast.error(err.message); setPayments([]); }
+      setPayments(await getArray('/fees/payments', {
+        from: paymentFilter.from || undefined, to: paymentFilter.to || undefined,
+      }));
+    } catch (err) { setError(err.message); setPayments([]); }
   }, [paymentFilter]);
 
   useEffect(() => {
     loadSummary();
-    api.get('/students', { params: { limit: 500, status: 'ACTIVE' } }).then(({ data }) => setStudents(data.rows)).catch(() => {});
+    getObject('/students', { limit: 500, status: 'ACTIVE' })
+      .then((data) => setStudents(expectArray(data.rows, '/students rows')))
+      .catch((err) => setError(err.message));
   }, []);
   useEffect(() => { loadRecords(); }, [loadRecords]);
   useEffect(() => { if (tab === 'payments') loadPayments(); }, [tab, loadPayments]);
@@ -287,7 +291,7 @@ export default function Fees() {
             </label>
           </div>
           <div className="card overflow-x-auto">
-            {!records ? <Spinner /> : records.length === 0 ? <Empty message="No fee records match" /> : (
+            {error ? <ErrorNote message={error} onRetry={loadRecords} /> : !records ? <Spinner /> : records.length === 0 ? <Empty message="No fee records match" /> : (
               <table className="w-full">
                 <thead className="bg-slate-50 dark:bg-slate-800/60">
                   <tr>
@@ -301,10 +305,10 @@ export default function Fees() {
                     <tr key={r.id} className="text-slate-700 dark:text-slate-300">
                       <td className="td">
                         <div className="flex items-center gap-2.5">
-                          <Avatar name={r.student.name} size="sm" />
+                          <Avatar name={r.student?.name} size="sm" />
                           <div>
-                            <p className="font-semibold text-slate-900 dark:text-white">{r.student.name}</p>
-                            <p className="text-xs text-slate-400">{r.student.admissionNo}</p>
+                            <p className="font-semibold text-slate-900 dark:text-white">{r.student?.name || 'Unknown student'}</p>
+                            <p className="text-xs text-slate-400">{r.student?.admissionNo || '—'}</p>
                           </div>
                         </div>
                       </td>
@@ -319,7 +323,7 @@ export default function Fees() {
                           {r.status !== 'PAID' && (
                             <button className="rounded-lg p-2 text-brand-600 hover:bg-brand-50 dark:hover:bg-brand-900/30" onClick={() => setPayFor(r)} aria-label="Collect"><Wallet size={16} /></button>
                           )}
-                          <button className="rounded-lg p-2 text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30" onClick={() => setDel({ kind: 'record', id: r.id, name: `${r.feeType} for ${r.student.name}` })} aria-label="Delete"><Trash2 size={16} /></button>
+                          <button className="rounded-lg p-2 text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30" onClick={() => setDel({ kind: 'record', id: r.id, name: `${r.feeType} for ${r.student?.name || 'this student'}` })} aria-label="Delete"><Trash2 size={16} /></button>
                         </div>
                       </td>
                     </tr>
@@ -338,7 +342,7 @@ export default function Fees() {
             <Field label="To" type="date" value={paymentFilter.to} onChange={(e) => setPaymentFilter({ ...paymentFilter, to: e.target.value })} />
           </div>
           <div className="card overflow-x-auto">
-            {!payments ? <Spinner /> : payments.length === 0 ? <Empty message="No payments recorded" /> : (
+            {error ? <ErrorNote message={error} onRetry={loadPayments} /> : !payments ? <Spinner /> : payments.length === 0 ? <Empty message="No payments recorded" /> : (
               <table className="w-full">
                 <thead className="bg-slate-50 dark:bg-slate-800/60">
                   <tr>

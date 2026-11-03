@@ -58,11 +58,14 @@ export default function Login({ admin = false }) {
           <button className="btn-primary w-full" type="submit" disabled={busy}>
             {busy ? <Loader2 size={18} className="animate-spin" /> : <LogIn size={18} />} Sign In
           </button>
+          <p className="text-center text-sm">
+            <Link to="/forgot-password" className="font-semibold text-brand-600 hover:underline">Forgot password?</Link>
+          </p>
         </form>
         <p className="mt-4 text-center text-sm text-slate-500 dark:text-slate-400">
           {admin
             ? <>Looking for the student portal? <Link to="/login" className="font-semibold text-brand-600 hover:underline">Student Login</Link></>
-            : <>Are you staff? <Link to="/admin/login" className="font-semibold text-brand-600 hover:underline">Admin Login</Link></>}
+            : <>New student? <Link to="/register" className="font-semibold text-brand-600 hover:underline">Register here</Link> · Are you staff? <Link to="/admin/login" className="font-semibold text-brand-600 hover:underline">Admin Login</Link></>}
         </p>
       </div>
     </div>
