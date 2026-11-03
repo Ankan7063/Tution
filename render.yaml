@@ -1,0 +1,33 @@
+# Render blueprint for the Tuition Center API.
+# Secrets are intentionally not stored here — set MONGODB_URI and CLIENT_URL in the
+# Render dashboard (or edit this file locally, but never commit real values).
+services:
+  - type: web
+    name: tuition-center-api
+    runtime: node
+    plan: free
+    rootDir: server
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      # Atlas SRV connection string for the "Tution" database.
+      - key: MONGODB_URI
+        sync: false
+      - key: MONGODB_DB
+        value: Tution
+      # Random per-service secret; replace with your own if you need stable tokens.
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      # Origin of the Vercel frontend, required for CORS.
+      - key: CLIENT_URL
+        sync: false
+      # Optional outbound email; leave unset to skip email sending.
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false

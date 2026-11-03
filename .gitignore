@@ -1,0 +1,19 @@
+node_modules/
+dist/
+build/
+
+# real environment files — server/.env.example is the one to commit
+.env
+.env.*
+!.env.example
+
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# uploaded files / generated receipts
+server/uploads/
+client/public/uploads/
