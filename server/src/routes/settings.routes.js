@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { CenterSettings } from '../models/index.js';
-import { authenticate, isStaff } from '../middleware/auth.js';
+import { authenticate, requirePermission } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 
 const router = Router();
@@ -33,7 +33,7 @@ router.get('/', async (req, res, next) => {
   }
 });
 
-router.put('/', authenticate, isStaff, validate(settingsSchema), async (req, res, next) => {
+router.put('/', authenticate, requirePermission('settings:manage'), validate(settingsSchema), async (req, res, next) => {
   try {
     const data = { ...req.body };
     if (data.email === '') data.email = null;

@@ -55,3 +55,18 @@
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-thumb { @apply bg-brand-200 dark:bg-slate-700 rounded-full; }
 ::-webkit-scrollbar-track { background: transparent; }
+
+/* Direct Ctrl+P on an admin page: the shell (sidebar, header, buttons, toasts) drops out and
+   only the page's own content prints. The dedicated Print buttons use an isolated document
+   instead, so nothing here is load-bearing for a report. */
+@media print {
+  .no-print, aside, header, nav { display: none !important; }
+  body { background: #fff; color: #0f172a; }
+  .lg\:pl-64 { padding-left: 0 !important; }
+  main { padding: 0 !important; }
+  .card { border: 0 !important; box-shadow: none !important; border-radius: 0 !important; }
+  thead { display: table-header-group; }
+  tr { break-inside: avoid; }
+  table { font-size: 11px; }
+  .td, .th { padding: 4px 6px !important; }
+}

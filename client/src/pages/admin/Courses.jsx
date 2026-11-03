@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { Plus, Pencil, Trash2, Loader2, BookOpen } from 'lucide-react';
 import api, { getArray, expectArray } from '../../api/client.js';
 import { useApp, money } from '../../context/AppContext.jsx';
+import { can as allowed } from '../../lib/permissions.js';
 import { Modal, Confirm, Spinner, Empty, ErrorNote, Field, SelectField, useToast } from '../../components/ui.jsx';
 
 const emptyCourse = { name: '', code: '', description: '', duration: '', monthlyFee: '', admissionFee: '', isActive: true };
@@ -100,7 +101,7 @@ function SubjectModal({ open, onClose, onSaved, courses, teachers, subject }) {
 }
 
 export default function Courses() {
-  const { settings } = useApp();
+  const { user, settings } = useApp();
   const toast = useToast();
   const [rows, setRows] = useState(null);
   const [error, setError] = useState(null);
@@ -109,6 +110,10 @@ export default function Courses() {
   const [subjectModal, setSubjectModal] = useState({ open: false, subject: null });
   const [del, setDel] = useState(null);
   const [busy, setBusy] = useState(false);
+
+  const canWrite = allowed(user, 'courses:write');
+  // The API leaves the fee columns out for roles without finance access, so read them only when present.
+  const seesFees = allowed(user, 'fees:read');
 
   const load = useCallback(async () => {
     setError(null);
@@ -136,8 +141,12 @@ export default function Courses() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white">Courses & Subjects</h1>
         <div className="flex gap-2">
-          <button className="btn-secondary" onClick={() => setSubjectModal({ open: true, subject: null })}><Plus size={16} /> Subject</button>
-          <button className="btn-primary" onClick={() => setCourseModal({ open: true, course: null })}><Plus size={16} /> Course</button>
+          {canWrite && (
+            <>
+              <button className="btn-secondary" onClick={() => setSubjectModal({ open: true, subject: null })}><Plus size={16} /> Subject</button>
+              <button className="btn-primary" onClick={() => setCourseModal({ open: true, course: null })}><Plus size={16} /> Course</button>
+            </>
+          )}
         </div>
       </div>
 
@@ -154,14 +163,18 @@ export default function Courses() {
                     <p className="text-xs text-slate-400">{c.code} · {c.duration || 'Ongoing'}</p>
                   </div>
                 </div>
-                <div className="flex gap-1">
-                  <button className="rounded-lg p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600 dark:hover:bg-brand-900/30" onClick={() => setCourseModal({ open: true, course: c })} aria-label="Edit"><Pencil size={15} /></button>
-                  <button className="rounded-lg p-2 text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30" onClick={() => setDel({ kind: 'course', id: c.id, name: c.name })} aria-label="Delete"><Trash2 size={15} /></button>
-                </div>
+                {canWrite && (
+                  <div className="flex gap-1">
+                    <button className="rounded-lg p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600 dark:hover:bg-brand-900/30" onClick={() => setCourseModal({ open: true, course: c })} aria-label="Edit"><Pencil size={15} /></button>
+                    <button className="rounded-lg p-2 text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30" onClick={() => setDel({ kind: 'course', id: c.id, name: c.name })} aria-label="Delete"><Trash2 size={15} /></button>
+                  </div>
+                )}
               </div>
               <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{c.description}</p>
               <div className="mt-3 flex items-center gap-4 text-sm">
-                <span className="font-bold text-brand-600 dark:text-brand-400">{money(c.monthlyFee, settings)}<span className="text-xs font-normal text-slate-400">/month</span></span>
+                {seesFees && c.monthlyFee != null && (
+                  <span className="font-bold text-brand-600 dark:text-brand-400">{money(c.monthlyFee, settings)}<span className="text-xs font-normal text-slate-400">/month</span></span>
+                )}
                 <span className="text-slate-400">{c._count?.students || 0} students</span>
                 <span className="text-slate-400">{c.batches?.length || 0} batches</span>
               </div>
@@ -172,7 +185,9 @@ export default function Courses() {
                   {c.subjects.map((s) => (
                     <span key={s.id} className="badge bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
                       {s.name}{s.teacher ? ` · ${s.teacher.name}` : ''}
-                      <button className="ml-1 text-slate-400 hover:text-rose-500" onClick={() => setDel({ kind: 'subject', id: s.id, name: s.name })} aria-label="Delete subject">×</button>
+                      {canWrite && (
+                        <button className="ml-1 text-slate-400 hover:text-rose-500" onClick={() => setDel({ kind: 'subject', id: s.id, name: s.name })} aria-label="Delete subject">×</button>
+                      )}
                     </span>
                   ))}
                 </div>

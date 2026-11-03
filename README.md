@@ -62,6 +62,7 @@ first run of the API creates indexes automatically.
 | --- | --- | --- | --- |
 | Admin (super) | `admin@tuitioncenter.com` | `Admin@123` | `/admin/login` |
 | Teacher | `teacher@tuitioncenter.com` | `Teacher@123` | `/admin/login` |
+| Staff | `staff@tuitioncenter.com` | `Staff@123` | `/admin/login` |
 | Student | `student@tuitioncenter.com` | `Student@123` | `/login` |
 
 The dataset also carries 20 students, 3 teachers, 4 courses, 3 batches, 600 attendance
@@ -165,17 +166,44 @@ tuition-center/
 
 ## Roles
 
-- **SUPER_ADMIN / ADMIN** — the whole admin dashboard.
-- **TEACHER** — signs in at `/admin/login`. The API allows them the dashboard stats and
-  charts, to mark student attendance for their batch, and to read rosters. Creating or
-  editing students, courses, batches, fee records, payments, exams, announcements and
-  settings is staff-only and returns `403`.
-- **STUDENT** — redirected to `/portal`, which shows only their own attendance, fees and
-  published results.
+Access is capability-based: `server/src/utils/permissions.js` holds the catalogue (`students:read`,
+`fees:read`, `payments:record`, `users:manage`, …), the base set for each role, and any extra
+per-account grants an admin ticks on. `client/src/lib/permissions.js` mirrors the same strings, so
+a button, a nav entry and the API guard always ask for the *same* capability.
 
-The client guard (`RequireStaff` in `client/src/App.jsx`) sends any non-student sign-in to
-the dashboard; the role limits above are enforced on the server, so a forbidden action
-surfaces as an error toast rather than a hidden button.
+- **SUPER_ADMIN / ADMIN** — every capability: all modules, CRUD, attendance, fees, payments,
+  payment history, receipts, financial reports, expenses in Reports, user accounts, role
+  assignment, password resets and Settings.
+- **TEACHER** — dashboard, their assigned batches and the students inside them, marking
+  attendance for those students, exams and academic reports. Fee status, amounts paid, pending
+  dues, payment history, revenue reports, expenses, other people's records, accounts and Settings
+  are refused by the API with `403`, and money fields are stripped from any response a teacher
+  could otherwise reach (`scrub()` in `permissions.js`, plus per-query omission in `/dashboard/stats`).
+- **STAFF** — front-office work: read and edit students, read teachers/courses/batches and the
+  attendance register. No financial capability by default; an admin can grant `fees:read` and
+  `payments:record` to a specific collections clerk. Full financial reporting stays with Admin.
+- **STUDENT** — redirected to `/portal`, which shows only their own attendance, fees and
+  published results. The student flow is unchanged.
+
+Accounts are only ever created, re-roled or reset from **Admin → User Accounts**
+(`users:manage`), which POSTs to `/api/auth/users` and PATCHes `/api/auth/users/:id`. Passwords
+are bcrypt hashes (cost 12), never returned by any endpoint, never logged, and an admin-set new
+password is not echoed back. `authenticate` re-reads the account on every request, so a revoked
+role, a removed grant or a deactivation takes effect on the very next call.
+
+The client guard (`RequireStaff`, `RequirePermission` in `client/src/App.jsx`) sends a student to
+`/portal` and bounces any hand-typed admin URL the session cannot serve back to the dashboard;
+the same limits are enforced on the server, so bypassing the UI still returns `403`.
+
+## Printing and exporting
+
+Every Print / Download CSV button builds a stand-alone A4 document (`client/src/lib/reports.js`)
+and hands it to the browser through a hidden `srcdoc` iframe — the page's sidebar, navbar, buttons
+and footer are structurally unable to appear in the print preview or the saved PDF. Each report
+carries a title, the centre name, the active filters (batch, date, month, tab) and the signer, and
+exports exactly the rows the table is showing: tick a subset and only those rows leave. CSVs are
+BOM-prefixed for Excel and named `<report>-<filter>-<date>.csv`; receipt PDFs are fetched with the
+bearer token, so they keep working for signed-in users only.
 
 ## Notes
 

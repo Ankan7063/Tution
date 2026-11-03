@@ -1,10 +1,16 @@
-import { useCallback, useEffect, useState } from 'react';
-import { IndianRupee, Plus, Trash2, Loader2, Receipt, Wand2, FileDown, Wallet, AlertTriangle } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { IndianRupee, Plus, Trash2, Loader2, Receipt, Wand2, FileDown, Wallet, AlertTriangle, Printer } from 'lucide-react';
 import api, { getArray, getObject, expectArray } from '../../api/client.js';
 import { useApp, money } from '../../context/AppContext.jsx';
+import { can as allowed } from '../../lib/permissions.js';
+import { downloadAuthedFile, downloadCsv, printReport, reporterName } from '../../lib/reports.js';
 import { Modal, Confirm, Spinner, Empty, ErrorNote, Field, SelectField, Badge, Avatar, useToast } from '../../components/ui.jsx';
 
 const METHODS = ['CASH', 'UPI', 'CARD', 'BANK_TRANSFER', 'ONLINE'];
+
+const pretty = (v) => String(v ?? '—').replaceAll('_', ' ');
+
+const asDate = (v) => (v ? new Date(v).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
 
 const dueOf = (r) => Number(r.amount) + Number(r.lateFee) - Number(r.discount);
 const paidOf = (r) => r.payments.reduce((s, p) => s + Number(p.amount), 0);
@@ -17,6 +23,15 @@ function SummaryCard({ label, value, Icon, grad }) {
         <p className="truncate text-xs font-medium text-slate-400">{label}</p>
         <p className="text-lg font-extrabold text-slate-900 dark:text-white">{value}</p>
       </div>
+    </div>
+  );
+}
+
+function ExportPair({ onPrint, onCsv, disabled }) {
+  return (
+    <div className="flex gap-2 no-print">
+      <button type="button" className="btn-ghost" onClick={onPrint} disabled={disabled}><Printer size={16} /> Print</button>
+      <button type="button" className="btn-ghost" onClick={onCsv} disabled={disabled}><FileDown size={16} /> CSV</button>
     </div>
   );
 }
@@ -172,7 +187,7 @@ function GenerateMonthlyModal({ open, onClose, onSaved }) {
 }
 
 export default function Fees() {
-  const { settings } = useApp();
+  const { user, settings } = useApp();
   const toast = useToast();
   const [tab, setTab] = useState('records');
   const [summary, setSummary] = useState(null);
@@ -187,21 +202,28 @@ export default function Fees() {
   const [payFor, setPayFor] = useState(null);
   const [del, setDel] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [picked, setPicked] = useState({});
+
+  const canManageFees = allowed(user, 'fees:write');
+  const canCollect = allowed(user, 'payments:record');
+  const canDeletePayment = allowed(user, 'payments:delete');
 
   const loadSummary = useCallback(() => getObject('/fees/summary').then(setSummary).catch(() => {}), []);
   const loadRecords = useCallback(async () => {
     setRecords(null);
     setError(null);
+    setPicked({});
     try {
       const rows = await getArray('/fees/records', {
         status: filter.status || undefined, overdue: filter.overdue ? 'true' : undefined,
       });
-      setRecords(rows.map((r) => ({ ...r, payments: expectArray(r.payments, '/fees/records payments') })));
+      setRecords(rows.map((r) => ({ ...r, payments: Array.isArray(r.payments) ? r.payments : [] })));
     } catch (err) { setError(err.message); setRecords([]); }
   }, [filter]);
   const loadPayments = useCallback(async () => {
     setPayments(null);
     setError(null);
+    setPicked({});
     try {
       setPayments(await getArray('/fees/payments', {
         from: paymentFilter.from || undefined, to: paymentFilter.to || undefined,
@@ -230,17 +252,65 @@ export default function Fees() {
     } catch (err) { toast.error(err.message); } finally { setBusy(false); }
   };
 
-  const downloadReceipt = async (p) => {
-    try {
-      const { data } = await api.get(`/fees/payments/${p.id}/receipt.pdf`, { responseType: 'blob' });
-      const url = URL.createObjectURL(new Blob([data], { type: 'application/pdf' }));
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `receipt-${p.receiptNo}.pdf`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (err) { toast.error(err.message); }
+  const downloadReceipt = (p) => downloadAuthedFile(api, `/fees/payments/${p.id}/receipt.pdf`, `receipt-${p.receiptNo || p.id}.pdf`)
+    .catch((err) => toast.error(err.message));
+
+  // The two finance tabs share one pattern: filtered rows, narrowed to the ticked rows when the
+  // user picked any, printed or exported as a standalone sheet.
+  const activeRows = tab === 'records' ? (records || []) : (payments || []);
+  const selected = useMemo(() => activeRows.filter((r) => picked[r.id]), [activeRows, picked]);
+  const outRows = selected.length ? selected : activeRows;
+
+  const filterMeta = tab === 'records'
+    ? [
+      { label: 'Status filter', value: filter.status || 'All statuses' },
+      { label: 'Overdue only', value: filter.overdue ? 'Yes' : 'No' },
+    ]
+    : [
+      { label: 'From', value: asDate(paymentFilter.from) },
+      { label: 'To', value: asDate(paymentFilter.to) },
+    ];
+
+  const feesReport = {
+    title: tab === 'records' ? 'Fee Statement' : 'Payment Collection Report',
+    subtitle: selected.length ? `${selected.length} selected records` : `${outRows.length} records`,
+    meta: [
+      { label: 'Centre', value: settings?.centerName || 'Tuition Center' },
+      ...filterMeta,
+      { label: 'Issued to', value: reporterName(user) },
+    ],
+    columns: tab === 'records'
+      ? [
+        { header: 'Student', value: (r) => r.student?.name },
+        { header: 'Roll / Admission No.', value: (r) => r.student?.admissionNo },
+        { header: 'Batch', value: (r) => r.student?.batch?.name },
+        { header: 'Fee Type', value: (r) => r.feeType },
+        { header: 'Period', value: (r) => r.period },
+        { header: 'Payable', value: (r) => money(dueOf(r), settings), align: 'right' },
+        { header: 'Paid', value: (r) => money(paidOf(r), settings), align: 'right' },
+        { header: 'Balance', value: (r) => money(Math.max(dueOf(r) - paidOf(r), 0), settings), align: 'right' },
+        { header: 'Due Date', value: (r) => asDate(r.dueDate) },
+        { header: 'Status', value: (r) => pretty(r.status) },
+      ]
+      : [
+        { header: 'Receipt No', value: (p) => p.receiptNo },
+        { header: 'Student', value: (p) => p.student?.name },
+        { header: 'Roll / Admission No.', value: (p) => p.student?.admissionNo },
+        { header: 'Fee Type', value: (p) => p.feeRecord?.feeType || 'General' },
+        { header: 'Period', value: (p) => p.feeRecord?.period },
+        { header: 'Amount', value: (m) => money(m.amount, settings), align: 'right' },
+        { header: 'Method', value: (p) => pretty(p.method) },
+        { header: 'Payment Date', value: (p) => asDate(p.paymentDate) },
+        { header: 'Received By', value: (p) => p.receivedBy?.email },
+      ],
+    rows: outRows,
+    footer: tab === 'payments' && outRows.length
+      ? `Collected in this sheet: ${money(outRows.reduce((s, p) => s + Number(p.amount || 0), 0), settings)}`
+      : undefined,
   };
+
+  const toggle = (id) => setPicked((p) => ({ ...p, [id]: !p[id] }));
+  const allPicked = !!outRows.length && activeRows.every((r) => picked[r.id]);
 
   return (
     <div className="space-y-4">
@@ -248,10 +318,16 @@ export default function Fees() {
         <h1 className="flex items-center gap-2 text-2xl font-extrabold text-slate-900 dark:text-white">
           <IndianRupee size={24} className="text-brand-600" /> Fees &amp; Payments
         </h1>
-        <div className="flex flex-wrap gap-2">
-          <button className="btn-secondary" onClick={() => setGenerate(true)}><Wand2 size={16} /> Generate Monthly</button>
-          <button className="btn-secondary" onClick={() => setPayFor('new')}><Wallet size={16} /> Record Payment</button>
-          <button className="btn-primary" onClick={() => setRecordModal(true)}><Plus size={16} /> Fee Record</button>
+        <div className="flex flex-wrap gap-2 no-print">
+          {canManageFees && (
+            <button className="btn-secondary" onClick={() => setGenerate(true)}><Wand2 size={16} /> Generate Monthly</button>
+          )}
+          {canCollect && (
+            <button className="btn-secondary" onClick={() => setPayFor('new')}><Wallet size={16} /> Record Payment</button>
+          )}
+          {canManageFees && (
+            <button className="btn-primary" onClick={() => setRecordModal(true)}><Plus size={16} /> Fee Record</button>
+          )}
         </div>
       </div>
 
@@ -264,20 +340,27 @@ export default function Fees() {
         </div>
       )}
 
-      <div className="flex flex-wrap gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
-        {[['records', 'Fee Records'], ['payments', 'Payment History']].map(([key, label]) => (
-          <button key={key} onClick={() => setTab(key)}
-            className={`rounded-lg px-3.5 py-2 text-sm font-semibold transition-colors ${
-              tab === key ? 'bg-white text-brand-700 shadow-sm dark:bg-slate-900 dark:text-brand-300' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'
-            }`}>
-            {label}
-          </button>
-        ))}
+      <div className="flex flex-wrap items-center justify-between gap-3 no-print">
+        <div className="flex flex-wrap gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
+          {[['records', 'Fee Records'], ['payments', 'Payment History']].map(([key, label]) => (
+            <button key={key} onClick={() => setTab(key)}
+              className={`rounded-lg px-3.5 py-2 text-sm font-semibold transition-colors ${
+                tab === key ? 'bg-white text-brand-700 shadow-sm dark:bg-slate-900 dark:text-brand-300' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'
+              }`}>
+              {label}
+            </button>
+          ))}
+        </div>
+        <ExportPair
+          disabled={!outRows.length}
+          onPrint={() => printReport(feesReport)}
+          onCsv={() => downloadCsv({ ...feesReport, suffix: tab })}
+        />
       </div>
 
       {tab === 'records' && (
         <>
-          <div className="card flex flex-wrap items-center gap-4 p-4">
+          <div className="card flex flex-wrap items-center gap-4 p-4 no-print">
             <SelectField label="Status" value={filter.status} onChange={(e) => setFilter({ ...filter, status: e.target.value })}>
               <option value="">All</option>
               <option value="PENDING">Pending</option>
@@ -289,20 +372,27 @@ export default function Fees() {
                 onChange={(e) => setFilter({ ...filter, overdue: e.target.checked })} />
               Overdue only
             </label>
+            {selected.length > 0 && (
+              <button type="button" className="btn-ghost mt-4" onClick={() => setPicked({})}>Clear {selected.length} selected</button>
+            )}
           </div>
           <div className="card overflow-x-auto">
             {error ? <ErrorNote message={error} onRetry={loadRecords} /> : !records ? <Spinner /> : records.length === 0 ? <Empty message="No fee records match" /> : (
               <table className="w-full">
                 <thead className="bg-slate-50 dark:bg-slate-800/60">
                   <tr>
+                    <th className="th w-10 no-print"><input type="checkbox" className="h-4 w-4 rounded border-slate-300 text-brand-600" checked={allPicked}
+                      onChange={() => setPicked(allPicked ? {} : Object.fromEntries(activeRows.map((r) => [r.id, true])))} aria-label="Select all" /></th>
                     <th className="th">Student</th><th className="th">Fee</th><th className="th">Payable</th>
                     <th className="th">Paid</th><th className="th">Balance</th><th className="th">Due</th>
-                    <th className="th">Status</th><th className="th">Actions</th>
+                    <th className="th">Status</th>{(canCollect || canManageFees) && <th className="th no-print">Actions</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {records.map((r) => (
                     <tr key={r.id} className="text-slate-700 dark:text-slate-300">
+                      <td className="td no-print"><input type="checkbox" className="h-4 w-4 rounded border-slate-300 text-brand-600" checked={!!picked[r.id]}
+                        onChange={() => toggle(r.id)} aria-label={`Select ${r.feeType}`} /></td>
                       <td className="td">
                         <div className="flex items-center gap-2.5">
                           <Avatar name={r.student?.name} size="sm" />
@@ -318,14 +408,18 @@ export default function Fees() {
                       <td className="td font-semibold text-rose-600">{money(Math.max(dueOf(r) - paidOf(r), 0), settings)}</td>
                       <td className="td">{new Date(r.dueDate).toLocaleDateString('en-IN')}</td>
                       <td className="td"><Badge value={r.status} /></td>
-                      <td className="td">
-                        <div className="flex gap-1">
-                          {r.status !== 'PAID' && (
-                            <button className="rounded-lg p-2 text-brand-600 hover:bg-brand-50 dark:hover:bg-brand-900/30" onClick={() => setPayFor(r)} aria-label="Collect"><Wallet size={16} /></button>
-                          )}
-                          <button className="rounded-lg p-2 text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30" onClick={() => setDel({ kind: 'record', id: r.id, name: `${r.feeType} for ${r.student?.name || 'this student'}` })} aria-label="Delete"><Trash2 size={16} /></button>
-                        </div>
-                      </td>
+                      {(canCollect || canManageFees) && (
+                        <td className="td no-print">
+                          <div className="flex gap-1">
+                            {canCollect && r.status !== 'PAID' && (
+                              <button className="rounded-lg p-2 text-brand-600 hover:bg-brand-50 dark:hover:bg-brand-900/30" onClick={() => setPayFor(r)} aria-label="Collect"><Wallet size={16} /></button>
+                            )}
+                            {canManageFees && (
+                              <button className="rounded-lg p-2 text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30" onClick={() => setDel({ kind: 'record', id: r.id, name: `${r.feeType} for ${r.student?.name || 'this student'}` })} aria-label="Delete"><Trash2 size={16} /></button>
+                            )}
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -337,34 +431,46 @@ export default function Fees() {
 
       {tab === 'payments' && (
         <>
-          <div className="card grid gap-4 p-4 sm:grid-cols-2">
+          <div className="card grid gap-4 p-4 sm:grid-cols-2 no-print">
             <Field label="From" type="date" value={paymentFilter.from} onChange={(e) => setPaymentFilter({ ...paymentFilter, from: e.target.value })} />
             <Field label="To" type="date" value={paymentFilter.to} onChange={(e) => setPaymentFilter({ ...paymentFilter, to: e.target.value })} />
+            {selected.length > 0 && (
+              <button type="button" className="btn-ghost" onClick={() => setPicked({})}>Clear {selected.length} selected</button>
+            )}
           </div>
           <div className="card overflow-x-auto">
             {error ? <ErrorNote message={error} onRetry={loadPayments} /> : !payments ? <Spinner /> : payments.length === 0 ? <Empty message="No payments recorded" /> : (
               <table className="w-full">
                 <thead className="bg-slate-50 dark:bg-slate-800/60">
                   <tr>
+                    <th className="th w-10 no-print"><input type="checkbox" className="h-4 w-4 rounded border-slate-300 text-brand-600" checked={allPicked}
+                      onChange={() => setPicked(allPicked ? {} : Object.fromEntries(activeRows.map((r) => [r.id, true])))} aria-label="Select all" /></th>
                     <th className="th">Receipt</th><th className="th">Student</th><th className="th">Fee</th>
-                    <th className="th">Amount</th><th className="th">Method</th><th className="th">Date</th><th className="th">Actions</th>
+                    <th className="th">Amount</th><th className="th">Method</th><th className="th">Date</th>
+                    {(canDeletePayment || canCollect) && <th className="th no-print">Actions</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {payments.map((p) => (
                     <tr key={p.id} className="text-slate-700 dark:text-slate-300">
+                      <td className="td no-print"><input type="checkbox" className="h-4 w-4 rounded border-slate-300 text-brand-600" checked={!!picked[p.id]}
+                        onChange={() => toggle(p.id)} aria-label={`Select receipt ${p.receiptNo}`} /></td>
                       <td className="td font-mono text-xs">{p.receiptNo}</td>
-                      <td className="td font-semibold text-slate-900 dark:text-white">{p.student.name}</td>
+                      <td className="td font-semibold text-slate-900 dark:text-white">{p.student?.name || '—'}</td>
                       <td className="td">{p.feeRecord?.feeType || 'General'}<span className="block text-xs text-slate-400">{p.feeRecord?.period || ''}</span></td>
                       <td className="td font-bold text-emerald-600">{money(p.amount, settings)}</td>
                       <td className="td"><Badge value={p.method} /></td>
                       <td className="td">{new Date(p.paymentDate).toLocaleDateString('en-IN')}</td>
-                      <td className="td">
-                        <div className="flex gap-1">
-                          <button className="rounded-lg p-2 text-brand-600 hover:bg-brand-50 dark:hover:bg-brand-900/30" onClick={() => downloadReceipt(p)} aria-label="Receipt PDF"><Receipt size={16} /></button>
-                          <button className="rounded-lg p-2 text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30" onClick={() => setDel({ kind: 'payment', id: p.id, name: `receipt ${p.receiptNo}` })} aria-label="Delete"><Trash2 size={16} /></button>
-                        </div>
-                      </td>
+                      {(canDeletePayment || canCollect) && (
+                        <td className="td no-print">
+                          <div className="flex gap-1">
+                            <button className="rounded-lg p-2 text-brand-600 hover:bg-brand-50 dark:hover:bg-brand-900/30" onClick={() => downloadReceipt(p)} aria-label="Receipt PDF"><Receipt size={16} /></button>
+                            {canDeletePayment && (
+                              <button className="rounded-lg p-2 text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30" onClick={() => setDel({ kind: 'payment', id: p.id, name: `receipt ${p.receiptNo}` })} aria-label="Delete"><Trash2 size={16} /></button>
+                            )}
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>

@@ -4,14 +4,19 @@ import { Users, UserCheck, BookOpen, Layers, IndianRupee, AlertTriangle, Trendin
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, BarChart, Bar, Legend } from 'recharts';
 import { getArray, getObject, expectArray } from '../../api/client.js';
 import { useApp, money } from '../../context/AppContext.jsx';
+import { can as allowed } from '../../lib/permissions.js';
 import { Spinner, Avatar, ErrorNote } from '../../components/ui.jsx';
 
 export default function Dashboard() {
-  const { settings } = useApp();
+  const { user, settings } = useApp();
   const [stats, setStats] = useState(null);
   const [error, setError] = useState(null);
   const [charts, setCharts] = useState({ revenue: [], enrollment: [], attendance: [] });
   const [chartError, setChartError] = useState(null);
+
+  // The API leaves the money figures out of the payload for academic-only roles, so the
+  // finance tiles and the revenue chart render only when this session may see them.
+  const seesFees = allowed(user, 'fees:read');
 
   const load = useCallback(() => {
     setStats(null);
@@ -20,19 +25,20 @@ export default function Dashboard() {
       .then((data) => setStats({
         ...data,
         recentStudents: expectArray(data.recentStudents, '/dashboard/stats recentStudents'),
-        recentPayments: expectArray(data.recentPayments, '/dashboard/stats recentPayments'),
+        recentPayments: Array.isArray(data.recentPayments) ? data.recentPayments : [],
         upcomingExams: expectArray(data.upcomingExams, '/dashboard/stats upcomingExams'),
       }))
       .catch((err) => setError(err.message));
-    Promise.all([
-      getArray('/dashboard/charts/revenue'),
+    const requests = [
       getArray('/dashboard/charts/enrollment'),
       getArray('/dashboard/charts/attendance'),
-    ]).then(([revenue, enrollment, attendance]) => {
+      seesFees ? getArray('/dashboard/charts/revenue') : Promise.resolve([]),
+    ];
+    Promise.all(requests).then(([enrollment, attendance, revenue]) => {
       setCharts({ revenue, enrollment, attendance });
       setChartError(null);
     }).catch((err) => setChartError(err.message));
-  }, []);
+  }, [seesFees]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -44,9 +50,13 @@ export default function Dashboard() {
     ['Total Teachers', stats.totalTeachers, UserCheck, 'from-cyan-500 to-sky-600'],
     ['Courses', stats.totalCourses, BookOpen, 'from-emerald-500 to-teal-600'],
     ['Batches', stats.totalBatches, Layers, 'from-amber-500 to-orange-600'],
-    ['Collected (all time)', money(stats.totalCollected, settings), IndianRupee, 'from-violet-500 to-purple-600'],
-    ['This Month', money(stats.monthlyRevenue, settings), TrendingUp, 'from-rose-500 to-pink-600'],
-    ['Pending Fees', stats.pendingFeesCount, AlertTriangle, 'from-red-500 to-rose-600'],
+    ...(seesFees
+      ? [
+        ['Collected (all time)', money(stats.totalCollected, settings), IndianRupee, 'from-violet-500 to-purple-600'],
+        ['This Month', money(stats.monthlyRevenue, settings), TrendingUp, 'from-rose-500 to-pink-600'],
+        ['Pending Fees', stats.pendingFeesCount, AlertTriangle, 'from-red-500 to-rose-600'],
+      ]
+      : []),
   ];
 
   return (
@@ -64,6 +74,7 @@ export default function Dashboard() {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
+        {seesFees && (
         <div className="card p-5">
           <h3 className="mb-4 font-bold text-slate-900 dark:text-white">Monthly Revenue</h3>
           {chartError ? <p className="py-8 text-center text-sm text-rose-600">{chartError}</p> : (
@@ -84,6 +95,7 @@ export default function Dashboard() {
           </ResponsiveContainer>
           )}
         </div>
+        )}
         <div className="card p-5">
           <h3 className="mb-4 font-bold text-slate-900 dark:text-white">Student Enrollment</h3>
           {chartError ? <p className="py-8 text-center text-sm text-rose-600">{chartError}</p> : (
@@ -136,6 +148,7 @@ export default function Dashboard() {
             ))}
           </div>
         </div>
+        {seesFees && (
         <div className="card p-5">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="font-bold text-slate-900 dark:text-white">Recent Fee Payments</h3>
@@ -154,7 +167,10 @@ export default function Dashboard() {
               </div>
             ))}
           </div>
-          <h3 className="mb-2 mt-5 font-bold text-slate-900 dark:text-white">Upcoming Examinations</h3>
+        </div>
+        )}
+        <div className="card p-5">
+          <h3 className="mb-3 font-bold text-slate-900 dark:text-white">Upcoming Examinations</h3>
           {stats.upcomingExams.length === 0 && <p className="text-sm text-slate-400">No exams scheduled.</p>}
           <div className="space-y-2">
             {stats.upcomingExams.map((e) => (

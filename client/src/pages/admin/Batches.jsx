@@ -1,11 +1,26 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
-import { Plus, Pencil, Trash2, Loader2, ArrowLeft, Layers, Clock, Users as UsersIcon, X } from 'lucide-react';
+import { Plus, Pencil, Trash2, Loader2, ArrowLeft, Layers, Clock, Users as UsersIcon, X, Printer, FileDown } from 'lucide-react';
 import api from '../../api/client.js';
+import { useApp } from '../../context/AppContext.jsx';
+import { can as allowed } from '../../lib/permissions.js';
+import { downloadCsv, printReport, reporterName } from '../../lib/reports.js';
 import { Modal, Confirm, Spinner, Empty, Field, SelectField, useToast, Avatar } from '../../components/ui.jsx';
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const emptyBatch = { name: '', courseId: '', teacherId: '', capacity: 30, startTime: '', endTime: '', days: [], isActive: true };
+
+const dayNames = (days) => (days || []).map((d) => DAYS[Number(d)]).join(', ') || '—';
+
+// Print / Download sit on each data block and export only that block's rows.
+function ExportButtons({ report, suffix, disabled }) {
+  return (
+    <div className="flex gap-2 no-print">
+      <button type="button" className="btn-ghost" onClick={() => printReport(report)} disabled={disabled}><Printer size={16} /> Print</button>
+      <button type="button" className="btn-ghost" onClick={() => downloadCsv({ ...report, suffix })} disabled={disabled}><FileDown size={16} /> CSV</button>
+    </div>
+  );
+}
 
 function BatchModal({ open, onClose, onSaved, batch, courses, teachers }) {
   const toast = useToast();
@@ -72,6 +87,7 @@ function BatchModal({ open, onClose, onSaved, batch, courses, teachers }) {
 }
 
 export function Batches() {
+  const { user, settings } = useApp();
   const toast = useToast();
   const [rows, setRows] = useState(null);
   const [courses, setCourses] = useState([]);
@@ -79,6 +95,8 @@ export function Batches() {
   const [modal, setModal] = useState({ open: false, batch: null });
   const [del, setDel] = useState(null);
   const [busy, setBusy] = useState(false);
+
+  const canWrite = allowed(user, 'batches:write');
 
   const load = useCallback(async () => {
     const { data } = await api.get('/batches');
@@ -98,11 +116,35 @@ export function Batches() {
     } catch (err) { toast.error(err.message); } finally { setBusy(false); }
   };
 
+  const listReport = {
+    title: 'Batch Directory',
+    subtitle: `${(rows || []).length} batches`,
+    meta: [
+      { label: 'Centre', value: settings?.centerName || 'Tuition Center' },
+      { label: 'Issued to', value: reporterName(user) },
+    ],
+    columns: [
+      { header: 'Batch', value: (b) => b.name },
+      { header: 'Course', value: (b) => b.course?.name || 'No course' },
+      { header: 'Teacher', value: (b) => b.teacher?.name || 'Unassigned' },
+      { header: 'Timing', value: (b) => `${b.startTime || '—'} – ${b.endTime || '—'}` },
+      { header: 'Days', value: (b) => dayNames(b.days) },
+      { header: 'Students', value: (b) => `${b._count?.students || 0} / ${b.capacity}` },
+      { header: 'Status', value: (b) => (b.isActive === false ? 'Inactive' : 'Active') },
+    ],
+    rows: rows || [],
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white">Batches & Schedule</h1>
-        <button className="btn-primary" onClick={() => setModal({ open: true, batch: null })}><Plus size={16} /> Create Batch</button>
+        <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white">Batches &amp; Schedule</h1>
+        <div className="flex flex-wrap items-center gap-2">
+          <ExportButtons report={listReport} suffix="batches" disabled={!rows?.length} />
+          {canWrite && (
+            <button className="btn-primary" onClick={() => setModal({ open: true, batch: null })}><Plus size={16} /> Create Batch</button>
+          )}
+        </div>
       </div>
       {!rows ? <Spinner /> : rows.length === 0 ? <div className="card"><Empty message="No batches yet" /></div> : (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -116,10 +158,12 @@ export function Batches() {
                     <p className="text-xs text-slate-400">{b.course?.name || 'No course'}</p>
                   </div>
                 </div>
-                <div className="flex gap-1">
-                  <button className="rounded-lg p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600 dark:hover:bg-brand-900/30" onClick={() => setModal({ open: true, batch: b })} aria-label="Edit"><Pencil size={15} /></button>
-                  <button className="rounded-lg p-2 text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30" onClick={() => setDel(b)} aria-label="Delete"><Trash2 size={15} /></button>
-                </div>
+                {canWrite && (
+                  <div className="flex gap-1 no-print">
+                    <button className="rounded-lg p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600 dark:hover:bg-brand-900/30" onClick={() => setModal({ open: true, batch: b })} aria-label="Edit"><Pencil size={15} /></button>
+                    <button className="rounded-lg p-2 text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30" onClick={() => setDel(b)} aria-label="Delete"><Trash2 size={15} /></button>
+                  </div>
+                )}
               </div>
               <div className="mt-3 space-y-1.5 text-sm text-slate-500 dark:text-slate-400">
                 <p className="flex items-center gap-2"><Clock size={14} /> {b.startTime || '—'} – {b.endTime || '—'} · {(b.days || []).map((d) => DAYS[Number(d)]).join(', ') || 'No days set'}</p>
@@ -142,6 +186,7 @@ export function Batches() {
 export function BatchDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user, settings } = useApp();
   const toast = useToast();
   const [batch, setBatch] = useState(null);
   const [students, setStudents] = useState([]);
@@ -175,7 +220,48 @@ export function BatchDetail() {
   }, [batch?.courseId]);
 
   if (!batch) return <Spinner />;
+  const canWrite = allowed(user, 'batches:write');
   const assignedIds = new Set((batch.studentLinks || []).map((l) => l.studentId));
+  const roster = (batch.studentLinks || []).map((l) => l.student).filter(Boolean);
+  const schedule = [...(batch.schedules || [])].sort((a, b) => a.dayOfWeek - b.dayOfWeek);
+
+  const sheetMeta = [
+    { label: 'Centre', value: settings?.centerName || 'Tuition Center' },
+    { label: 'Batch', value: batch.name },
+    { label: 'Course', value: batch.course?.name || 'No course' },
+    { label: 'Teacher', value: batch.teacher?.name || 'Unassigned' },
+    { label: 'Timing', value: `${batch.startTime || '—'} – ${batch.endTime || '—'} · ${dayNames(batch.days)}` },
+    { label: 'Issued to', value: reporterName(user) },
+  ];
+
+  const rosterReport = {
+    title: `${batch.name} — Student Roster`,
+    subtitle: `${roster.length} of ${batch.capacity} seats filled`,
+    meta: sheetMeta,
+    columns: [
+      { header: 'Student Name', value: (s) => s.name },
+      { header: 'Roll / Admission No.', value: (s) => s.admissionNo },
+      { header: 'Class', value: (s) => s.classGrade },
+      { header: 'Phone', value: (s) => s.phone },
+      { header: 'Status', value: (s) => String(s.status || '—').replaceAll('_', ' ') },
+    ],
+    rows: roster,
+  };
+
+  const scheduleReport = {
+    title: `${batch.name} — Class Timetable`,
+    subtitle: `${schedule.length} class${schedule.length === 1 ? '' : 'es'} per week`,
+    meta: sheetMeta,
+    columns: [
+      { header: 'Day', value: (s) => DAYS[s.dayOfWeek] },
+      { header: 'Start', value: (s) => s.startTime },
+      { header: 'End', value: (s) => s.endTime },
+      { header: 'Subject', value: (s) => s.subject?.name || '—' },
+      { header: 'Teacher', value: (s) => s.teacher?.name || batch.teacher?.name || 'Batch teacher' },
+      { header: 'Room', value: (s) => s.room || '—' },
+    ],
+    rows: schedule,
+  };
 
   const assign = async () => {
     setBusy(true);
@@ -229,19 +315,26 @@ export function BatchDetail() {
               {batch.course?.name || 'No course'} · {batch.teacher?.name || 'Unassigned'} · {batch.startTime}–{batch.endTime} · {(batch.days || []).map((d) => DAYS[Number(d)]).join(', ')}
             </p>
           </div>
-          <button className="btn-secondary" onClick={() => setModal({ open: true, batch })}><Pencil size={15} /> Edit</button>
+          {canWrite && (
+            <button className="btn-secondary" onClick={() => setModal({ open: true, batch })}><Pencil size={15} /> Edit</button>
+          )}
         </div>
       </div>
 
       <div className="card overflow-hidden">
-        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4 dark:border-slate-800">
           <h3 className="font-bold text-slate-900 dark:text-white">Students ({batch.studentLinks?.length || 0}/{batch.capacity})</h3>
-          <button className="btn-primary !py-1.5 text-xs" onClick={() => setAssignOpen(true)}><Plus size={14} /> Assign Students</button>
+          <div className="flex flex-wrap items-center gap-2">
+            <ExportButtons report={rosterReport} suffix={`${batch.name}-roster`} disabled={!roster.length} />
+            {canWrite && (
+              <button className="btn-primary !py-1.5 text-xs" onClick={() => setAssignOpen(true)}><Plus size={14} /> Assign Students</button>
+            )}
+          </div>
         </div>
         {(batch.studentLinks || []).length === 0 ? <Empty message="No students in this batch" /> : (
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead className="border-b border-slate-100 dark:border-slate-800"><tr><th className="th">Student</th><th className="th">Admission No</th><th className="th">Class</th><th className="th text-right">Actions</th></tr></thead>
+              <thead className="border-b border-slate-100 dark:border-slate-800"><tr><th className="th">Student</th><th className="th">Admission No</th><th className="th">Class</th>{canWrite && <th className="th text-right no-print">Actions</th>}</tr></thead>
               <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
                 {batch.studentLinks.map((l) => (
                   <tr key={l.id}>
@@ -253,9 +346,11 @@ export function BatchDetail() {
                     </td>
                     <td className="td text-slate-400">{l.student.admissionNo}</td>
                     <td className="td">{l.student.classGrade || '—'}</td>
-                    <td className="td text-right">
-                      <button className="rounded-lg p-2 text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30" onClick={() => unassign(l.studentId)} aria-label="Remove"><X size={16} /></button>
-                    </td>
+                    {canWrite && (
+                      <td className="td text-right no-print">
+                        <button className="rounded-lg p-2 text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30" onClick={() => unassign(l.studentId)} aria-label="Remove"><X size={16} /></button>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -265,25 +360,32 @@ export function BatchDetail() {
       </div>
 
       <div className="card overflow-hidden">
-        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4 dark:border-slate-800">
           <h3 className="font-bold text-slate-900 dark:text-white">Class Schedule</h3>
-          <button className="btn-primary !py-1.5 text-xs" onClick={() => setScheduleOpen(true)}><Plus size={14} /> Add Class</button>
+          <div className="flex flex-wrap items-center gap-2">
+            <ExportButtons report={scheduleReport} suffix={`${batch.name}-timetable`} disabled={!schedule.length} />
+            {canWrite && (
+              <button className="btn-primary !py-1.5 text-xs" onClick={() => setScheduleOpen(true)}><Plus size={14} /> Add Class</button>
+            )}
+          </div>
         </div>
         {(batch.schedules || []).length === 0 ? <Empty message="No classes scheduled" /> : (
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead className="border-b border-slate-100 dark:border-slate-800"><tr><th className="th">Day</th><th className="th">Time</th><th className="th">Subject</th><th className="th">Teacher</th><th className="th">Room</th><th className="th text-right">Actions</th></tr></thead>
+              <thead className="border-b border-slate-100 dark:border-slate-800"><tr><th className="th">Day</th><th className="th">Time</th><th className="th">Subject</th><th className="th">Teacher</th><th className="th">Room</th>{canWrite && <th className="th text-right no-print">Actions</th>}</tr></thead>
               <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
-                {[...batch.schedules].sort((a, b) => a.dayOfWeek - b.dayOfWeek).map((s) => (
+                {schedule.map((s) => (
                   <tr key={s.id}>
                     <td className="td font-semibold">{DAYS[s.dayOfWeek]}</td>
                     <td className="td">{s.startTime} – {s.endTime}</td>
                     <td className="td">{s.subject?.name || '—'}</td>
                     <td className="td">{s.teacher?.name || '—'}</td>
                     <td className="td">{s.room || '—'}</td>
-                    <td className="td text-right">
-                      <button className="rounded-lg p-2 text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30" onClick={() => removeSchedule(s.id)} aria-label="Remove"><X size={16} /></button>
-                    </td>
+                    {canWrite && (
+                      <td className="td text-right no-print">
+                        <button className="rounded-lg p-2 text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30" onClick={() => removeSchedule(s.id)} aria-label="Remove"><X size={16} /></button>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>

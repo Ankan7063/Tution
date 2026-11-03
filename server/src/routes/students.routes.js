@@ -10,7 +10,8 @@ import {
   CenterSettings,
   oid,
 } from '../models/index.js';
-import { authenticate, isStaff, authorize } from '../middleware/auth.js';
+import { authenticate, isStaff, authorize, requirePermission } from '../middleware/auth.js';
+import { assignedBatchIds, can } from '../utils/permissions.js';
 import { validate, ApiError } from '../middleware/validate.js';
 import { nextAdmissionNo } from '../utils/helpers.js';
 import { notifyAdmins, createNotification } from '../utils/notify.js';
@@ -36,11 +37,29 @@ const studentSchema = z.object({
   photo: z.string().optional(),
 });
 
-router.get('/', authorize('SUPER_ADMIN', 'ADMIN', 'TEACHER'), async (req, res, next) => {
+// A teacher may only ever reach the students in the batches they are assigned to.
+async function batchScopeOf(user) {
+  return assignedBatchIds(user);
+}
+
+// The student portal opens a learner's own record; the handler below still rejects every other id.
+const readStudent = (req, res, next) => {
+  if (can(req.user, 'students:read') || req.user.role === 'STUDENT') return next();
+  return res.status(403).json({ message: 'Your role does not allow this action' });
+};
+
+router.get('/', requirePermission('students:read'), async (req, res, next) => {
   try {
     const { search, status, page = 1, limit = 20 } = req.query;
     const filters = castIds(req.query, ['courseId', 'batchId']);
     if (!filters) return res.status(400).json({ message: 'Invalid id' });
+    const scope = await batchScopeOf(req.user);
+    if (scope) {
+      if (filters.batchId && !scope.includes(String(filters.batchId))) {
+        throw new ApiError(403, 'You are not assigned to this batch');
+      }
+      filters.batchId = { $in: scope.map((id) => oid(id)) };
+    }
     const where = {
       ...filters,
       ...(status && { status }),
@@ -73,7 +92,7 @@ router.get('/', authorize('SUPER_ADMIN', 'ADMIN', 'TEACHER'), async (req, res, n
   }
 });
 
-router.get('/:id', async (req, res, next) => {
+router.get('/:id', readStudent, async (req, res, next) => {
   try {
     const _id = oid(req.params.id);
     if (!_id) return res.status(400).json({ message: 'Invalid id' });
@@ -87,6 +106,15 @@ router.get('/:id', async (req, res, next) => {
       { path: 'examResults', populate: [{ path: 'examination' }, { path: 'subject' }] },
     ]);
     if (!student) throw new ApiError(404, 'Student not found');
+    if (req.user.role === 'STUDENT' && String(student.userId) !== String(req.user._id)) {
+      throw new ApiError(403, 'You may only open your own record');
+    }
+    if (req.user.role === 'TEACHER') {
+      const scope = await batchScopeOf(req.user);
+      if (!student.batchId || !scope.includes(String(student.batchId))) {
+        throw new ApiError(403, 'This student is not in your batches');
+      }
+    }
     const row = student.toJSON();
     row.user = pick(row.user, ['email']);
     if (row.batch) row.batch.teacher = pick(row.batch.teacher, ['name', 'phone']);
@@ -105,7 +133,7 @@ router.get('/:id', async (req, res, next) => {
   }
 });
 
-router.post('/', isStaff, validate(studentSchema), async (req, res, next) => {
+router.post('/', requirePermission('students:write'), validate(studentSchema), async (req, res, next) => {
   try {
     const data = applyIds(req.body, ['courseId', 'batchId']);
     if (!data) return res.status(400).json({ message: 'Invalid id' });
@@ -126,7 +154,7 @@ router.post('/', isStaff, validate(studentSchema), async (req, res, next) => {
   }
 });
 
-router.put('/:id', isStaff, validate(studentSchema.partial()), async (req, res, next) => {
+router.put('/:id', requirePermission('students:write'), validate(studentSchema.partial()), async (req, res, next) => {
   try {
     const _id = oid(req.params.id);
     if (!_id) return res.status(400).json({ message: 'Invalid id' });
@@ -141,7 +169,7 @@ router.put('/:id', isStaff, validate(studentSchema.partial()), async (req, res, 
   }
 });
 
-router.delete('/:id', isStaff, async (req, res, next) => {
+router.delete('/:id', requirePermission('students:delete'), async (req, res, next) => {
   try {
     const _id = oid(req.params.id);
     if (!_id) return res.status(400).json({ message: 'Invalid id' });
@@ -166,6 +194,10 @@ router.get('/:id/fee-summary', async (req, res, next) => {
   try {
     const _id = oid(req.params.id);
     if (!_id) return res.status(400).json({ message: 'Invalid id' });
+    if (!can(req.user, 'fees:read')) {
+      const own = await Student.exists({ _id, userId: req.user._id });
+      if (!own) throw new ApiError(403, 'Your role does not allow this action');
+    }
     const records = await FeeRecord.find({ studentId: _id }).populate('payments');
     let total = 0, paid = 0;
     for (const r of records) {

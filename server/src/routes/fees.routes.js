@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { oid, mongoose, FeeRecord, Payment, Student, User, CenterSettings } from '../models/index.js';
-import { authenticate, isStaff } from '../middleware/auth.js';
+import { authenticate, requirePermission } from '../middleware/auth.js';
+import { can } from '../utils/permissions.js';
 import { validate, ApiError } from '../middleware/validate.js';
 import { nextReceiptNo } from '../utils/helpers.js';
 import { buildReceiptPdf } from '../utils/pdf.js';
@@ -23,7 +24,7 @@ const feeRecordSchema = z.object({
   dueDate: z.coerce.date(),
 });
 
-router.get('/records', async (req, res, next) => {
+router.get('/records', requirePermission('fees:read'), async (req, res, next) => {
   try {
     const { status, studentId, overdue } = req.query;
     const where = {
@@ -54,7 +55,7 @@ router.get('/records', async (req, res, next) => {
   }
 });
 
-router.post('/records', isStaff, validate(feeRecordSchema), async (req, res, next) => {
+router.post('/records', requirePermission('fees:write'), validate(feeRecordSchema), async (req, res, next) => {
   try {
     const { studentId, ...rest } = req.body;
     res.status(201).json(await FeeRecord.create({ ...rest, studentId: oid(studentId), status: 'PENDING' }));
@@ -63,7 +64,7 @@ router.post('/records', isStaff, validate(feeRecordSchema), async (req, res, nex
   }
 });
 
-router.delete('/records/:id', isStaff, async (req, res, next) => {
+router.delete('/records/:id', requirePermission('fees:write'), async (req, res, next) => {
   try {
     const _id = oid(req.params.id);
     if (!_id) return res.status(400).json({ message: 'Invalid id' });
@@ -87,7 +88,7 @@ router.delete('/records/:id', isStaff, async (req, res, next) => {
 });
 
 // Generate monthly fee records for all active students in one click
-router.post('/records/generate-monthly', isStaff, validate(z.object({
+router.post('/records/generate-monthly', requirePermission('fees:write'), validate(z.object({
   period: z.string().regex(/^\d{4}-\d{2}$/, 'Period must be YYYY-MM'),
   dueDate: z.coerce.date(),
   feeType: z.string().default('Monthly Fee'),
@@ -118,7 +119,7 @@ const paymentSchema = z.object({
   paymentDate: z.coerce.date().optional(),
 });
 
-router.get('/payments', async (req, res, next) => {
+router.get('/payments', requirePermission('fees:read'), async (req, res, next) => {
   try {
     const { studentId, from, to } = req.query;
     const where = {
@@ -144,7 +145,7 @@ router.get('/payments', async (req, res, next) => {
   }
 });
 
-router.post('/payments', isStaff, validate(paymentSchema), async (req, res, next) => {
+router.post('/payments', requirePermission('payments:record'), validate(paymentSchema), async (req, res, next) => {
   try {
     const { studentId, feeRecordId, amount, method, note, paymentDate } = req.body;
     const sid = oid(studentId);
@@ -217,6 +218,11 @@ router.get('/payments/:id/receipt.pdf', async (req, res, next) => {
     if (!_id) return res.status(400).json({ message: 'Invalid id' });
     const payment = await Payment.findById(_id);
     if (!payment) throw new ApiError(404, 'Payment not found');
+    // A student may still print their own receipt; nobody else outside finance.
+    if (!can(req.user, 'fees:read') && !can(req.user, 'payments:record')) {
+      const own = await Student.exists({ _id: payment.studentId, userId: req.user._id });
+      if (!own) throw new ApiError(403, 'Your role does not allow this action');
+    }
     const [student, feeRecord, receivedBy, settings] = await Promise.all([
       Student.findById(payment.studentId),
       payment.feeRecordId ? FeeRecord.findById(payment.feeRecordId) : Promise.resolve(null),
@@ -237,7 +243,7 @@ router.get('/payments/:id/receipt.pdf', async (req, res, next) => {
   }
 });
 
-router.delete('/payments/:id', isStaff, async (req, res, next) => {
+router.delete('/payments/:id', requirePermission('payments:delete'), async (req, res, next) => {
   try {
     const _id = oid(req.params.id);
     if (!_id) return res.status(400).json({ message: 'Invalid id' });
@@ -259,7 +265,7 @@ router.delete('/payments/:id', isStaff, async (req, res, next) => {
   }
 });
 
-router.get('/summary', async (req, res, next) => {
+router.get('/summary', requirePermission('fees:read'), async (req, res, next) => {
   try {
     const records = await FeeRecord.find().limit(5000).select('amount discount lateFee');
     const monthStart = new Date();

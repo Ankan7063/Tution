@@ -1,8 +1,9 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { Batch, BatchStudent, ClassSchedule, Examination, oid, Student, StudentAttendance } from '../models/index.js';
-import { authenticate, isStaff } from '../middleware/auth.js';
-import { validate } from '../middleware/validate.js';
+import { authenticate, requirePermission } from '../middleware/auth.js';
+import { validate, ApiError } from '../middleware/validate.js';
+import { assignedBatchIds } from '../utils/permissions.js';
 
 const router = Router();
 router.use(authenticate);
@@ -46,9 +47,10 @@ const relation = (obj, key, name, fields) => {
   return obj;
 };
 
-router.get('/', async (req, res, next) => {
+router.get('/', requirePermission('batches:read'), async (req, res, next) => {
   try {
-    const batches = await Batch.find()
+    const scope = await assignedBatchIds(req.user);
+    const batches = await Batch.find(scope ? { _id: { $in: scope.map((id) => oid(id)) } } : {})
       .sort({ name: 1 })
       .populate([
         { path: 'courseId', select: 'name' },
@@ -79,10 +81,12 @@ router.get('/', async (req, res, next) => {
   }
 });
 
-router.get('/:id', async (req, res, next) => {
+router.get('/:id', requirePermission('batches:read'), async (req, res, next) => {
   try {
     const _id = oid(req.params.id);
     if (!_id) return res.status(400).json({ message: 'Invalid id' });
+    const scope = await assignedBatchIds(req.user);
+    if (scope && !scope.includes(String(_id))) throw new ApiError(403, 'You are not assigned to this batch');
     const batch = await Batch.findOne({ _id }).populate(['courseId', 'teacherId']);
     if (!batch) return res.status(404).json({ message: 'Batch not found' });
     const [links, schedules] = await Promise.all([
@@ -96,7 +100,7 @@ router.get('/:id', async (req, res, next) => {
     relation(o, 'courseId', 'course');
     relation(o, 'teacherId', 'teacher');
     o.studentLinks = links.map((l) => {
-      const lo = relation(l.toJSON(), 'studentId', 'student');
+      const lo = relation(l.toJSON(), 'studentId', 'student', ['id', 'name', 'admissionNo', 'classGrade', 'phone', 'parentName', 'parentPhone', 'status']);
       if (lo.student) relation(lo.student, 'userId', 'user', ['email']);
       return lo;
     });
@@ -112,7 +116,7 @@ router.get('/:id', async (req, res, next) => {
   }
 });
 
-router.post('/', isStaff, validate(batchSchema), async (req, res, next) => {
+router.post('/', requirePermission('batches:write'), validate(batchSchema), async (req, res, next) => {
   try {
     const { courseId, teacherId } = req.body;
     if (badRef(courseId, teacherId)) return res.status(400).json({ message: 'Invalid id' });
@@ -122,7 +126,7 @@ router.post('/', isStaff, validate(batchSchema), async (req, res, next) => {
   }
 });
 
-router.put('/:id', isStaff, validate(batchSchema.partial()), async (req, res, next) => {
+router.put('/:id', requirePermission('batches:write'), validate(batchSchema.partial()), async (req, res, next) => {
   try {
     const _id = oid(req.params.id);
     if (!_id) return res.status(400).json({ message: 'Invalid id' });
@@ -140,7 +144,7 @@ router.put('/:id', isStaff, validate(batchSchema.partial()), async (req, res, ne
   }
 });
 
-router.delete('/:id', isStaff, async (req, res, next) => {
+router.delete('/:id', requirePermission('batches:write'), async (req, res, next) => {
   try {
     const _id = oid(req.params.id);
     if (!_id) return res.status(400).json({ message: 'Invalid id' });
@@ -159,7 +163,7 @@ router.delete('/:id', isStaff, async (req, res, next) => {
   }
 });
 
-router.post('/:id/students', isStaff, validate(z.object({ studentIds: z.array(z.string()).min(1) })), async (req, res, next) => {
+router.post('/:id/students', requirePermission('batches:write'), validate(z.object({ studentIds: z.array(z.string()).min(1) })), async (req, res, next) => {
   try {
     const _id = oid(req.params.id);
     if (!_id) return res.status(400).json({ message: 'Invalid id' });
@@ -177,7 +181,7 @@ router.post('/:id/students', isStaff, validate(z.object({ studentIds: z.array(z.
   }
 });
 
-router.delete('/:id/students/:studentId', isStaff, async (req, res, next) => {
+router.delete('/:id/students/:studentId', requirePermission('batches:write'), async (req, res, next) => {
   try {
     const _id = oid(req.params.id);
     const studentId = oid(req.params.studentId);
@@ -190,7 +194,7 @@ router.delete('/:id/students/:studentId', isStaff, async (req, res, next) => {
   }
 });
 
-router.post('/schedules', isStaff, validate(scheduleSchema), async (req, res, next) => {
+router.post('/schedules', requirePermission('batches:write'), validate(scheduleSchema), async (req, res, next) => {
   try {
     const { batchId, teacherId, subjectId } = req.body;
     if (badRef(batchId, teacherId, subjectId)) return res.status(400).json({ message: 'Invalid id' });
@@ -207,7 +211,7 @@ router.post('/schedules', isStaff, validate(scheduleSchema), async (req, res, ne
   }
 });
 
-router.delete('/schedules/:id', isStaff, async (req, res, next) => {
+router.delete('/schedules/:id', requirePermission('batches:write'), async (req, res, next) => {
   try {
     const _id = oid(req.params.id);
     if (!_id) return res.status(400).json({ message: 'Invalid id' });

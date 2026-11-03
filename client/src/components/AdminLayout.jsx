@@ -3,52 +3,67 @@ import { NavLink, Outlet, Link, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Users, UserPlus, BookOpen, Layers, CalendarCheck, IndianRupee,
   FileText, BarChart3, Megaphone, Settings, LogOut, Menu, X, Bell, Sun, Moon,
-  GraduationCap, ClipboardList, Wallet, MessageCircle, Phone, Mail,
+  GraduationCap, ClipboardList, UserCog, MessageCircle, Phone, Mail,
 } from 'lucide-react';
 import { useApp, waLink } from '../context/AppContext.jsx';
 import api, { getObject, expectArray } from '../api/client.js';
+import { can as allowed } from '../lib/permissions.js';
 import { ErrorBoundary } from './ui.jsx';
 
+// Each entry names the capability it needs — the same string the API checks on the request
+// this page makes — so the menu cannot show a link the session is not allowed to open.
 const sections = [
-  { title: 'Main', items: [['/admin', 'Dashboard', LayoutDashboard]] },
+  { title: 'Main', items: [['/admin', 'Dashboard', LayoutDashboard, 'dashboard:read']] },
   {
     title: 'Students',
     items: [
-      ['/admin/students', 'All Students', Users],
-      ['/admin/students/new', 'New Admission', UserPlus],
+      ['/admin/students', 'All Students', Users, 'students:read'],
+      ['/admin/students/new', 'New Admission', UserPlus, 'students:write'],
+    ],
+  },
+  {
+    title: 'People',
+    items: [
+      ['/admin/teachers', 'Teachers & Staff', ClipboardList, 'teachers:read'],
     ],
   },
   {
     title: 'Academics',
     items: [
-      ['/admin/courses', 'Courses & Subjects', BookOpen],
-      ['/admin/batches', 'Batches & Schedule', Layers],
-      ['/admin/attendance', 'Attendance', CalendarCheck],
-      ['/admin/exams', 'Exams & Results', FileText],
+      ['/admin/courses', 'Courses & Subjects', BookOpen, 'courses:read'],
+      ['/admin/batches', 'Batches & Schedule', Layers, 'batches:read'],
+      ['/admin/attendance', 'Attendance', CalendarCheck, 'attendance:read'],
+      ['/admin/exams', 'Exams & Results', FileText, 'exams:read'],
     ],
   },
   {
     title: 'Finance',
-    items: [['/admin/fees', 'Fees & Payments', IndianRupee]],
+    items: [['/admin/fees', 'Fees & Payments', IndianRupee, 'fees:read']],
   },
   {
     title: 'Insights',
-    items: [['/admin/reports', 'Reports', BarChart3]],
+    items: [['/admin/reports', 'Reports', BarChart3, 'reports:read']],
   },
   {
     title: 'Communication',
-    items: [['/admin/announcements', 'Announcements', Megaphone]],
+    items: [['/admin/announcements', 'Announcements', Megaphone, 'announcements:write']],
   },
   {
     title: 'Admin',
-    items: [['/admin/settings', 'Settings', Settings]],
+    items: [
+      ['/admin/users', 'User Accounts', UserCog, 'users:manage'],
+      ['/admin/settings', 'Settings', Settings, 'settings:manage'],
+    ],
   },
 ];
 
 function Sidebar({ open, onClose }) {
   const { user, settings } = useApp();
+  const visible = sections
+    .map((s) => ({ ...s, items: s.items.filter(([, , , perm]) => allowed(user, perm)) }))
+    .filter((s) => s.items.length);
   return (
-    <aside className={`fixed inset-y-0 left-0 z-40 w-64 transform bg-gradient-to-b from-brand-700 via-brand-600 to-indigo-700 text-white transition-transform lg:translate-x-0 ${open ? 'translate-x-0' : '-translate-x-full'}`}>
+    <aside className={`no-print fixed inset-y-0 left-0 z-40 w-64 transform bg-gradient-to-b from-brand-700 via-brand-600 to-indigo-700 text-white transition-transform lg:translate-x-0 ${open ? 'translate-x-0' : '-translate-x-full'}`}>
       <div className="flex h-16 items-center justify-between border-b border-white/10 px-5">
         <Link to="/" className="flex items-center gap-2">
           <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/15"><GraduationCap size={20} /></span>
@@ -60,7 +75,7 @@ function Sidebar({ open, onClose }) {
         <button className="rounded-lg p-1 hover:bg-white/10 lg:hidden" onClick={onClose} aria-label="Close menu"><X size={20} /></button>
       </div>
       <nav className="h-[calc(100vh-8rem)] overflow-y-auto px-3 py-4">
-        {sections.map((s) => (
+        {visible.map((s) => (
           <div key={s.title} className="mb-4">
             <p className="px-3 pb-1 text-[10px] font-bold uppercase tracking-widest text-brand-200/80">{s.title}</p>
             {s.items.map(([to, label, Icon]) => (
@@ -144,7 +159,7 @@ export default function AdminLayout() {
       {open && <div className="fixed inset-0 z-30 bg-black/40 lg:hidden" onClick={() => setOpen(false)} />}
 
       <div className="lg:pl-64">
-        <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-slate-200 bg-white/90 px-4 backdrop-blur dark:border-slate-800 dark:bg-slate-900/90">
+        <header className="no-print sticky top-0 z-20 flex h-16 items-center justify-between border-b border-slate-200 bg-white/90 px-4 backdrop-blur dark:border-slate-800 dark:bg-slate-900/90">
           <div className="flex items-center gap-2">
             <button className="rounded-xl p-2 text-slate-500 hover:bg-slate-100 lg:hidden dark:text-slate-400 dark:hover:bg-slate-800" onClick={() => setOpen(true)} aria-label="Open menu">
               <Menu size={22} />

@@ -10,6 +10,8 @@ const jsonOptions = {
   versionKey: false,
   transform(_doc, ret) {
     delete ret._id;
+    // No route should ever serialise a credential, so the hash is dropped at the source.
+    delete ret.passwordHash;
     return ret;
   },
 };
@@ -30,7 +32,7 @@ const oidFromUuid = (uuid) => new Types.ObjectId(String(uuid).replace(/-/g, '').
 
 const createdAtField = { createdAt: { type: Date, default: () => new Date() } };
 
-const Role = ['SUPER_ADMIN', 'ADMIN', 'TEACHER', 'STUDENT'];
+const Role = ['SUPER_ADMIN', 'ADMIN', 'TEACHER', 'STAFF', 'STUDENT'];
 const StudentStatus = ['ACTIVE', 'INACTIVE', 'PASSED_OUT'];
 const AttendanceStatus = ['PRESENT', 'ABSENT', 'LATE', 'LEAVE'];
 const FeeStatus = ['PENDING', 'PARTIAL', 'PAID', 'OVERDUE'];
@@ -50,6 +52,8 @@ const userSchema = new Schema(
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
     passwordHash: { type: String, required: true },
     role: { type: String, enum: Role, default: 'ADMIN' },
+    // Capabilities granted on top of the role, by an admin. Only names in PERMISSIONS are honoured.
+    permissions: { type: [String], default: [] },
     isActive: { type: Boolean, default: true },
     lastLoginAt: { type: Date, default: null },
   },

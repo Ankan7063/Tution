@@ -1,8 +1,9 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { oid, StudentAttendance, TeacherAttendance } from '../models/index.js';
-import { authenticate, authorize } from '../middleware/auth.js';
-import { validate } from '../middleware/validate.js';
+import { oid, Student, Teacher, StudentAttendance, TeacherAttendance } from '../models/index.js';
+import { authenticate, authorize, requirePermission } from '../middleware/auth.js';
+import { assignedBatchIds } from '../utils/permissions.js';
+import { validate, ApiError } from '../middleware/validate.js';
 import { notifyAdmins } from '../utils/notify.js';
 import { utcDay } from '../utils/helpers.js';
 
@@ -47,12 +48,22 @@ const dayUpsert = (filter, changed, onInsertOnly = {}) => {
   return { updateOne: { filter, update: { $set: set, $setOnInsert: onInsert }, upsert: true } };
 };
 
-router.post('/students/bulk', authorize('SUPER_ADMIN', 'ADMIN', 'TEACHER'), validate(bulkSchema), async (req, res, next) => {
+router.post('/students/bulk', requirePermission('attendance:write'), validate(bulkSchema), async (req, res, next) => {
   try {
     const { date, batchId, entries } = req.body;
     if (batchId && !oid(batchId)) return res.status(400).json({ message: 'Invalid id' });
     const studentIds = entries.map((e) => oid(e.studentId));
     if (studentIds.some((id) => !id)) return res.status(400).json({ message: 'Invalid id' });
+    // A teacher may only mark attendance for the batch and students they are assigned to.
+    const scope = await assignedBatchIds(req.user);
+    if (scope) {
+      if (batchId && !scope.includes(String(batchId))) {
+        throw new ApiError(403, 'You are not assigned to this batch');
+      }
+      const unique = [...new Set(studentIds.map(String))];
+      const inScope = await Student.countDocuments({ _id: { $in: unique }, batchId: { $in: scope.map((id) => oid(id)) } });
+      if (inScope !== unique.length) throw new ApiError(403, 'Some students are not in your batches');
+    }
     const day = utcDay(date);
     await StudentAttendance.bulkWrite(
       entries.map((e, i) =>
@@ -76,10 +87,15 @@ router.post('/students/bulk', authorize('SUPER_ADMIN', 'ADMIN', 'TEACHER'), vali
   }
 });
 
-router.get('/students', async (req, res, next) => {
+router.get('/students', requirePermission('attendance:read'), async (req, res, next) => {
   try {
     const { date, batchId, studentId, month } = req.query;
     const where = {};
+    const scope = await assignedBatchIds(req.user);
+    if (scope) {
+      if (batchId && !scope.includes(String(batchId))) throw new ApiError(403, 'You are not assigned to this batch');
+      where.batchId = { $in: scope.map((id) => oid(id)) };
+    }
     if (studentId) {
       const id = oid(studentId);
       if (!id) return res.status(400).json({ message: 'Invalid id' });
@@ -99,13 +115,13 @@ router.get('/students', async (req, res, next) => {
       .sort({ date: 'desc' })
       .limit(500)
       .populate([
-        { path: 'studentId', select: 'name admissionNo' },
+        { path: 'studentId', select: 'name admissionNo classGrade' },
         { path: 'batchId', select: 'name' },
       ]);
     res.json(
       rows.map((row) => {
         const o = row.toJSON();
-        relation(o, 'studentId', 'student', ['name', 'admissionNo']);
+        relation(o, 'studentId', 'student', ['name', 'admissionNo', 'classGrade']);
         relation(o, 'batchId', 'batch', ['name']);
         return o;
       }),
@@ -115,10 +131,19 @@ router.get('/students', async (req, res, next) => {
   }
 });
 
-router.get('/students/report/:studentId', async (req, res, next) => {
+router.get('/students/report/:studentId', requirePermission('attendance:read'), async (req, res, next) => {
   try {
     const studentId = oid(req.params.studentId);
     if (!studentId) return res.status(400).json({ message: 'Invalid id' });
+    const student = await Student.findOne({ _id: studentId }).select('userId batchId');
+    if (!student) throw new ApiError(404, 'Student not found');
+    if (req.user.role === 'STUDENT' && String(student.userId) !== String(req.user._id)) {
+      throw new ApiError(403, 'You may only open your own record');
+    }
+    const scope = await assignedBatchIds(req.user);
+    if (scope && (!student.batchId || !scope.includes(String(student.batchId)))) {
+      throw new ApiError(403, 'This student is not in your batches');
+    }
     const { from, to } = req.query;
     const where = { studentId };
     if (from) {
@@ -149,10 +174,17 @@ router.post('/teachers/bulk', authorize('SUPER_ADMIN', 'ADMIN'), validate(bulkSc
   }
 });
 
-router.get('/teachers', authorize('SUPER_ADMIN', 'ADMIN', 'TEACHER'), async (req, res, next) => {
+router.get('/teachers', requirePermission('attendance:read'), async (req, res, next) => {
   try {
     const { date } = req.query;
-    const rows = await TeacherAttendance.find(date ? { date: utcDay(date) } : {})
+    const where = date ? { date: utcDay(date) } : {};
+    // A teacher reading teacher attendance is only ever shown their own row.
+    if (req.user.role === 'TEACHER') {
+      const teacher = await Teacher.findOne({ userId: req.user._id });
+      if (!teacher) return res.json([]);
+      where.teacherId = teacher._id;
+    }
+    const rows = await TeacherAttendance.find(where)
       .sort({ date: 'desc' })
       .limit(300)
       .populate({ path: 'teacherId', select: 'name employeeNo' });

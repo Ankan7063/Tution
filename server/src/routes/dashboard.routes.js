@@ -10,11 +10,12 @@ import {
   Teacher,
   Types,
 } from '../models/index.js';
-import { authenticate, authorize } from '../middleware/auth.js';
+import { authenticate, requirePermission } from '../middleware/auth.js';
+import { can } from '../utils/permissions.js';
 import { utcDay } from '../utils/helpers.js';
 
 const router = Router();
-router.use(authenticate, authorize('SUPER_ADMIN', 'ADMIN', 'TEACHER'));
+router.use(authenticate, requirePermission('dashboard:read'));
 
 const round2 = (v) => Math.round((Number(v) || 0) * 100) / 100;
 
@@ -44,6 +45,8 @@ router.get('/stats', async (req, res, next) => {
   try {
     const today = utcDay();
     const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+    // Money is only aggregated when the session may see it, so it never reaches the response at all.
+    const seesFees = can(req.user, 'fees:read');
     const [
       totalStudents, totalTeachers, totalCourses, totalBatches,
       todayAttendance, totalCollected, monthlyRevenue, recentStudents,
@@ -57,21 +60,25 @@ router.get('/stats', async (req, res, next) => {
         { $match: { date: today } },
         { $group: { _id: '$status', _count: { $sum: 1 } } },
       ]),
-      Payment.aggregate([{ $group: { _id: null, total: { $sum: '$amount' } } }]),
-      Payment.aggregate([
-        { $match: { paymentDate: { $gte: monthStart } } },
-        { $group: { _id: null, total: { $sum: '$amount' } } },
-      ]),
+      seesFees ? Payment.aggregate([{ $group: { _id: null, total: { $sum: '$amount' } } }]) : Promise.resolve([]),
+      seesFees
+        ? Payment.aggregate([
+          { $match: { paymentDate: { $gte: monthStart } } },
+          { $group: { _id: null, total: { $sum: '$amount' } } },
+        ])
+        : Promise.resolve([]),
       Student.find().sort({ createdAt: -1 }).limit(5).populate({ path: 'courseId', select: { name: 1 } }),
-      Payment.find()
-        .sort({ paymentDate: -1 })
-        .limit(5)
-        .populate({ path: 'studentId', select: { name: 1, admissionNo: 1 } }),
+      seesFees
+        ? Payment.find()
+          .sort({ paymentDate: -1 })
+          .limit(5)
+          .populate({ path: 'studentId', select: { name: 1, admissionNo: 1 } })
+        : Promise.resolve([]),
       Examination.find({ examDate: { $gte: today }, status: 'SCHEDULED' })
         .sort({ examDate: 1 })
         .limit(5)
         .populate({ path: 'courseId', select: { name: 1 } }),
-      FeeRecord.countDocuments({ dueDate: { $lt: today }, status: { $in: ['PENDING', 'PARTIAL'] } }),
+      seesFees ? FeeRecord.countDocuments({ dueDate: { $lt: today }, status: { $in: ['PENDING', 'PARTIAL'] } }) : Promise.resolve(null),
     ]);
 
     const byStatus = Object.fromEntries(todayAttendance.map((a) => [a._id, a._count]));
@@ -83,18 +90,24 @@ router.get('/stats', async (req, res, next) => {
 
     res.json({
       totalStudents, totalTeachers, totalCourses, totalBatches,
-      attendanceToday, totalCollected: round2(totalCollected[0]?.total || 0),
-      monthlyRevenue: round2(monthlyRevenue[0]?.total || 0), pendingFeesCount,
+      attendanceToday,
+      ...(seesFees ? { totalCollected: round2(totalCollected[0]?.total || 0) } : {}),
+      ...(seesFees ? { monthlyRevenue: round2(monthlyRevenue[0]?.total || 0) } : {}),
+      ...(seesFees ? { pendingFeesCount } : {}),
       recentStudents: recentStudents.map((s) => {
         const o = plain(s);
         o.course = only(o.course, ['name']);
         return o;
       }),
-      recentPayments: recentPayments.map((p) => {
-        const o = plain(p);
-        o.student = only(o.student, ['name', 'admissionNo']);
-        return o;
-      }),
+      ...(seesFees
+        ? {
+          recentPayments: recentPayments.map((p) => {
+            const o = plain(p);
+            o.student = only(o.student, ['name', 'admissionNo']);
+            return o;
+          }),
+        }
+        : {}),
       upcomingExams: upcomingExams.map((e) => {
         const o = plain(e);
         o.course = only(o.course, ['name']);
@@ -106,7 +119,7 @@ router.get('/stats', async (req, res, next) => {
   }
 });
 
-router.get('/charts/revenue', async (req, res, next) => {
+router.get('/charts/revenue', requirePermission('fees:read'), async (req, res, next) => {
   try {
     const since = new Date();
     since.setMonth(since.getMonth() - 12);

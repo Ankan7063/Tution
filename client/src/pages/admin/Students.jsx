@@ -1,9 +1,26 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Plus, Search, Pencil, Trash2, ArrowLeft, Loader2, Phone, MessageCircle, Mail, CalendarCheck, FileText } from 'lucide-react';
+import { Plus, Search, Pencil, Trash2, ArrowLeft, Loader2, Phone, MessageCircle, Mail, CalendarCheck, FileText, Printer, FileDown } from 'lucide-react';
 import api, { getArray, getObject, expectArray } from '../../api/client.js';
 import { useApp, money, waLink } from '../../context/AppContext.jsx';
+import { can as allowed } from '../../lib/permissions.js';
+import { downloadAuthedFile, downloadCsv, printReport, reporterName } from '../../lib/reports.js';
 import { Modal, Confirm, Spinner, Empty, ErrorNote, Badge, Field, SelectField, useToast, Avatar } from '../../components/ui.jsx';
+
+const prettyStatus = (value) => String(value || '—').replaceAll('_', ' ');
+
+const oneDay = () => new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+
+// A button pair used by every module: the same rows feed the print sheet and the CSV, so
+// neither can drift from what the table on screen shows.
+function ExportPair({ onPrint, onCsv, disabled }) {
+  return (
+    <div className="flex gap-2 no-print">
+      <button type="button" className="btn-ghost" onClick={onPrint} disabled={disabled}><Printer size={16} /> Print</button>
+      <button type="button" className="btn-ghost" onClick={onCsv} disabled={disabled}><FileDown size={16} /> CSV</button>
+    </div>
+  );
+}
 
 const emptyForm = {
   name: '', gender: '', dob: '', phone: '', email: '', parentName: '', parentPhone: '',
@@ -87,6 +104,7 @@ export function StudentFormModal({ open, onClose, onSaved, student, courses, bat
 
 export function Students() {
   const toast = useToast();
+  const { user, settings } = useApp();
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [courses, setCourses] = useState([]);
@@ -95,6 +113,12 @@ export function Students() {
   const [modal, setModal] = useState({ open: false, student: null });
   const [del, setDel] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [picked, setPicked] = useState({});
+  const [exporting, setExporting] = useState(false);
+
+  const seesFees = allowed(user, 'fees:read');
+  const canAdd = allowed(user, 'students:write');
+  const canDelete = allowed(user, 'students:delete');
 
   const load = useCallback(async () => {
     setError(null);
@@ -103,6 +127,7 @@ export function Students() {
       const body = await getObject(`/students?${params}`);
       expectArray(body.rows, '/students rows');
       setData(body);
+      setPicked({});
     } catch (err) { setError(err.message); }
   }, [filters]);
 
@@ -126,13 +151,74 @@ export function Students() {
     }
   };
 
+  const columns = useMemo(() => [
+    { header: 'Admission No', value: (s) => s.admissionNo },
+    { header: 'Student Name', value: (s) => s.name },
+    { header: 'Class', value: (s) => s.classGrade },
+    { header: 'Course', value: (s) => s.course?.name },
+    { header: 'Batch', value: (s) => s.batch?.name },
+    { header: 'Phone', value: (s) => s.phone || s.parentPhone },
+    { header: 'Guardian', value: (s) => s.parentName },
+    { header: 'Guardian Phone', value: (s) => s.parentPhone },
+    seesFees && { header: 'Monthly Fee', value: (s) => money(s.monthlyFee, settings), align: 'right' },
+    { header: 'Status', value: (s) => prettyStatus(s.status) },
+  ].filter(Boolean), [seesFees, settings]);
+
+  // An export follows the filters on screen; ticking rows narrows it to the selection. The
+  // paged list is re-read at full width so a print is never just the page being viewed.
+  const exportRows = async () => {
+    const selected = (data?.rows || []).filter((s) => picked[s.id]);
+    if (selected.length) return selected;
+    const params = new URLSearchParams(
+      Object.entries({ ...filters, page: 1, limit: 2000 }).filter(([, v]) => v !== '' && v != null),
+    );
+    const body = await getObject(`/students?${params}`);
+    return expectArray(body.rows, '/students rows');
+  };
+
+  const runExport = async (kind) => {
+    setExporting(true);
+    try {
+      const rows = await exportRows();
+      const report = {
+        title: 'Student Directory',
+        subtitle: `As on ${oneDay()}`,
+        meta: [
+          { label: 'Centre', value: settings?.centerName || 'Tuition Center' },
+          { label: 'Search', value: filters.search || '—' },
+          { label: 'Course', value: courses.find((c) => c.id === filters.courseId)?.name || 'All courses' },
+          { label: 'Batch', value: batches.find((b) => b.id === filters.batchId)?.name || 'All batches' },
+          { label: 'Status', value: filters.status || 'All statuses' },
+          { label: 'Issued to', value: reporterName(user) },
+        ],
+        columns,
+        rows,
+      };
+      if (kind === 'print') printReport(report);
+      else downloadCsv({ ...report, suffix: filters.batchId ? (batches.find((b) => b.id === filters.batchId)?.name || '') : '' });
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const allPicked = !!data?.rows?.length && data.rows.every((s) => picked[s.id]);
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white">All Students</h1>
-        <button className="btn-primary" onClick={() => setModal({ open: true, student: null })}><Plus size={18} /> New Admission</button>
+        <div className="flex flex-wrap items-center gap-2">
+          <ExportPair
+            disabled={!data?.rows?.length || exporting}
+            onPrint={() => runExport('print')}
+            onCsv={() => runExport('csv')}
+          />
+          {canAdd && <button className="btn-primary" onClick={() => setModal({ open: true, student: null })}><Plus size={18} /> New Admission</button>}
+        </div>
       </div>
-      <div className="card flex flex-wrap gap-3 p-4">
+      <div className="card flex flex-wrap gap-3 p-4 no-print">
         <div className="relative min-w-52 flex-1">
           <Search size={16} className="absolute top-1/2 left-3 -translate-y-1/2 text-slate-400" />
           <input className="input pl-9" placeholder="Search name, admission no, phone…"
@@ -156,14 +242,22 @@ export function Students() {
           <table className="w-full">
             <thead className="border-b border-slate-100 dark:border-slate-800">
               <tr>
+                <th className="th no-print"><input type="checkbox" aria-label="Select all students" className="h-4 w-4 accent-brand-600" checked={allPicked}
+                  onChange={() => setPicked(allPicked ? {} : Object.fromEntries(data.rows.map((s) => [s.id, true])))} /></th>
                 <th className="th">Student</th><th className="th">Admission No</th><th className="th">Course</th>
-                <th className="th">Batch</th><th className="th">Phone</th><th className="th">Monthly Fee</th>
-                <th className="th">Status</th><th className="th text-right">Actions</th>
+                <th className="th">Batch</th><th className="th">Phone</th>
+                {seesFees && <th className="th">Monthly Fee</th>}
+                <th className="th">Status</th>
+                {(canAdd || canDelete) && <th className="th text-right no-print">Actions</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
               {data.rows.map((s) => (
                 <tr key={s.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                  <td className="td no-print">
+                    <input type="checkbox" aria-label={`Select ${s.name}`} className="h-4 w-4 accent-brand-600" checked={!!picked[s.id]}
+                      onChange={() => setPicked((p) => ({ ...p, [s.id]: !p[s.id] }))} />
+                  </td>
                   <td className="td">
                     <Link to={`/admin/students/${s.id}`} className="flex items-center gap-3">
                       <Avatar name={s.name} size="sm" />
@@ -174,16 +268,22 @@ export function Students() {
                   <td className="td">{s.course?.name || '—'}</td>
                   <td className="td">{s.batch?.name || '—'}</td>
                   <td className="td">{s.phone || s.parentPhone || '—'}</td>
-                  <td className="td font-semibold">{money(s.monthlyFee)}</td>
+                  {seesFees && <td className="td font-semibold">{money(s.monthlyFee, settings)}</td>}
                   <td className="td"><Badge value={s.status} /></td>
-                  <td className="td">
-                    <div className="flex justify-end gap-1">
-                      <button className="rounded-lg p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600 dark:hover:bg-brand-900/30" title="Edit"
-                        onClick={() => setModal({ open: true, student: s })}><Pencil size={16} /></button>
-                      <button className="rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-900/30" title="Delete"
-                        onClick={() => setDel(s)}><Trash2 size={16} /></button>
-                    </div>
-                  </td>
+                  {(canAdd || canDelete) && (
+                    <td className="td no-print">
+                      <div className="flex justify-end gap-1">
+                        {canAdd && (
+                          <button className="rounded-lg p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600 dark:hover:bg-brand-900/30" title="Edit"
+                            onClick={() => setModal({ open: true, student: s })}><Pencil size={16} /></button>
+                        )}
+                        {canDelete && (
+                          <button className="rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-900/30" title="Delete"
+                            onClick={() => setDel(s)}><Trash2 size={16} /></button>
+                        )}
+                      </div>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -281,18 +381,20 @@ function NewAdmissionForm({ courses, batches, onDone }) {
 export function StudentDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { settings } = useApp();
+  const { user, settings } = useApp();
   const [student, setStudent] = useState(null);
   const [feeSummary, setFeeSummary] = useState(null);
   const [courses, setCourses] = useState([]);
   const [batches, setBatches] = useState([]);
   const [modal, setModal] = useState(false);
   const toast = useToast();
+  const seesFees = allowed(user, 'fees:read');
+  const canEdit = allowed(user, 'students:write');
 
   const load = useCallback(() => {
     api.get(`/students/${id}`).then(({ data }) => setStudent(data)).catch((e) => toast.error(e.message));
-    api.get(`/students/${id}/fee-summary`).then(({ data }) => setFeeSummary(data)).catch(() => {});
-  }, [id]);
+    if (seesFees) api.get(`/students/${id}/fee-summary`).then(({ data }) => setFeeSummary(data)).catch(() => {});
+  }, [id, seesFees]);
   useEffect(() => {
     load();
     api.get('/courses').then(({ data }) => setCourses(data)).catch(() => {});
@@ -309,9 +411,80 @@ export function StudentDetail() {
     return Math.round((ok / rows.length) * 100);
   })();
 
+  const profileFields = [
+    ['Admission No', student.admissionNo],
+    ['Class / Grade', student.classGrade],
+    ['Course', student.course?.name],
+    ['Batch', student.batch?.name],
+    ['Gender', student.gender],
+    ['Date of Birth', student.dob ? new Date(student.dob).toLocaleDateString('en-IN') : null],
+    ['Phone', student.phone],
+    ['Parent / Guardian', student.parentName],
+    ['Parent Contact', student.parentPhone],
+    ['Email', student.email || student.user?.email],
+    ['Address', student.address],
+    ['Admission Date', new Date(student.admissionDate).toLocaleDateString('en-IN')],
+    ['Status', prettyStatus(student.status)],
+  ].filter(([, v]) => v);
+
+  const printProfile = () => printReport({
+    title: `Student Profile — ${student.name}`,
+    subtitle: `${student.admissionNo || ''}${student.classGrade ? ` · ${student.classGrade}` : ''}`,
+    meta: [
+      { label: 'Centre', value: settings?.centerName || 'Tuition Center' },
+      { label: 'Printed by', value: reporterName(user) },
+    ],
+    columns: [{ header: 'Field', value: (r) => r[0] }, { header: 'Details', value: (r) => r[1] }],
+    rows: profileFields,
+  });
+
+  const feeRows = student.payments || [];
+  const feeColumns = [
+    { header: 'Receipt No', value: (p) => p.receiptNo },
+    { header: 'Fee Type', value: (p) => p.feeRecord?.feeType || 'General' },
+    { header: 'Period', value: (p) => p.feeRecord?.period },
+    { header: 'Amount', value: (p) => money(p.amount, settings), align: 'right' },
+    { header: 'Payment Date', value: (p) => new Date(p.paymentDate).toLocaleDateString('en-IN') },
+    { header: 'Mode', value: (p) => prettyStatus(p.method) },
+  ];
+
+  const feeReport = {
+    title: `Fee Statement — ${student.name}`,
+    subtitle: `${student.admissionNo || ''}`,
+    meta: [
+      { label: 'Centre', value: settings?.centerName || 'Tuition Center' },
+      { label: 'Student', value: student.name },
+      { label: 'Admission No', value: student.admissionNo },
+      feeSummary && { label: 'Total paid', value: money(feeSummary.paid, settings) },
+      feeSummary && { label: 'Pending', value: money(feeSummary.pending, settings) },
+      { label: 'Issued by', value: reporterName(user) },
+    ].filter(Boolean),
+    columns: feeColumns,
+    rows: feeRows,
+    footer: feeSummary ? `Total paid ${money(feeSummary.paid, settings)} · Pending ${money(feeSummary.pending, settings)}` : undefined,
+  };
+
+  // The receipt lives behind the authenticated API; a bare link has no bearer token.
+  const openReceipt = (p) => {
+    downloadAuthedFile(api, `/fees/payments/${p.id}/receipt.pdf`, `receipt-${p.receiptNo || p.id}.pdf`)
+      .catch((err) => toast.error(err.message));
+  };
+
   return (
     <div className="space-y-6">
-      <button className="btn-ghost" onClick={() => navigate(-1)}><ArrowLeft size={16} /> Back to students</button>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <button className="btn-ghost" onClick={() => navigate(-1)}><ArrowLeft size={16} /> Back to students</button>
+        <div className="flex flex-wrap gap-2">
+          <button className="btn-ghost" onClick={printProfile}><Printer size={16} /> Print Profile</button>
+          {seesFees && (
+            <ExportPair
+              disabled={!feeRows.length}
+              onPrint={() => printReport(feeReport)}
+              onCsv={() => downloadCsv(feeReport)}
+            />
+          )}
+        </div>
+      </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Profile card */}
@@ -346,7 +519,7 @@ export function StudentDetail() {
               </div>
             ))}
           </dl>
-          <button className="btn-secondary mt-5 w-full" onClick={() => setModal(true)}><Pencil size={16} /> Edit Profile</button>
+          {canEdit && <button className="btn-secondary mt-5 w-full" onClick={() => setModal(true)}><Pencil size={16} /> Edit Profile</button>}
         </div>
 
         {/* Fee summary + attendance */}
@@ -354,13 +527,14 @@ export function StudentDetail() {
           <div className="card p-6">
             <div className="flex items-center justify-between">
               <h3 className="font-bold text-slate-900 dark:text-white">Fee Summary</h3>
-              {feeSummary && (
+              {seesFees && feeSummary && (
                 <div className="flex gap-4 text-center">
                   <div><p className="text-xs text-slate-400">Total</p><p className="font-extrabold text-slate-800 dark:text-slate-200">{money(feeSummary.total, settings)}</p></div>
                   <div><p className="text-xs text-slate-400">Paid</p><p className="font-extrabold text-emerald-600">{money(feeSummary.paid, settings)}</p></div>
                   <div><p className="text-xs text-slate-400">Pending</p><p className="font-extrabold text-rose-600">{money(feeSummary.pending, settings)}</p></div>
                 </div>
               )}
+              {!seesFees && <p className="text-xs text-slate-400">Fee information is not available for your role.</p>}
             </div>
             {attendancePct !== null && (
               <div className="mt-4 flex items-center gap-3 rounded-xl bg-slate-50 p-3 dark:bg-slate-800">
@@ -370,18 +544,19 @@ export function StudentDetail() {
             )}
           </div>
 
+          {seesFees && (
           <div className="card overflow-hidden">
             <div className="border-b border-slate-100 px-5 py-4 dark:border-slate-800">
               <h3 className="font-bold text-slate-900 dark:text-white">Fee Transactions</h3>
             </div>
-            {student.payments.length === 0 ? <Empty message="No payments yet" /> : (
+            {(student.payments || []).length === 0 ? <Empty message="No payments yet" /> : (
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead className="border-b border-slate-100 dark:border-slate-800">
-                    <tr><th className="th">Receipt</th><th className="th">Fee Type</th><th className="th">Period</th><th className="th">Amount</th><th className="th">Date</th><th className="th">Mode</th><th className="th">Receipt PDF</th></tr>
+                    <tr><th className="th">Receipt</th><th className="th">Fee Type</th><th className="th">Period</th><th className="th">Amount</th><th className="th">Date</th><th className="th">Mode</th><th className="th no-print">Receipt PDF</th></tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
-                    {student.payments.map((p) => (
+                    {(student.payments || []).map((p) => (
                       <tr key={p.id}>
                         <td className="td font-semibold">{p.receiptNo}</td>
                         <td className="td">{p.feeRecord?.feeType || 'General'}</td>
@@ -389,10 +564,10 @@ export function StudentDetail() {
                         <td className="td font-bold text-emerald-600">{money(p.amount, settings)}</td>
                         <td className="td">{new Date(p.paymentDate).toLocaleDateString('en-IN')}</td>
                         <td className="td">{p.method}</td>
-                        <td className="td">
-                          <a className="btn-ghost !px-3 !py-1 text-xs" href={`/api/fees/payments/${p.id}/receipt.pdf`} target="_blank" rel="noreferrer">
+                        <td className="td no-print">
+                          <button type="button" className="btn-ghost !px-3 !py-1 text-xs" onClick={() => openReceipt(p)}>
                             <FileText size={14} /> PDF
-                          </a>
+                          </button>
                         </td>
                       </tr>
                     ))}
@@ -401,19 +576,21 @@ export function StudentDetail() {
               </div>
             )}
           </div>
+          )}
 
+          {seesFees && (
           <div className="card overflow-hidden">
             <div className="border-b border-slate-100 px-5 py-4 dark:border-slate-800">
               <h3 className="font-bold text-slate-900 dark:text-white">Pending Fee Records</h3>
             </div>
-            {student.feeRecords.filter((r) => r.status !== 'PAID').length === 0 ? <Empty message="All fees cleared" /> : (
+            {(student.feeRecords || []).filter((r) => r.status !== 'PAID').length === 0 ? <Empty message="All fees cleared" /> : (
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead className="border-b border-slate-100 dark:border-slate-800">
                     <tr><th className="th">Fee Type</th><th className="th">Period</th><th className="th">Amount</th><th className="th">Due Date</th><th className="th">Status</th></tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
-                    {student.feeRecords.filter((r) => r.status !== 'PAID').map((r) => (
+                    {(student.feeRecords || []).filter((r) => r.status !== 'PAID').map((r) => (
                       <tr key={r.id}>
                         <td className="td font-semibold">{r.feeType}</td>
                         <td className="td">{r.period || '—'}</td>
@@ -427,12 +604,40 @@ export function StudentDetail() {
               </div>
             )}
           </div>
+          )}
 
           <div className="card overflow-hidden">
-            <div className="border-b border-slate-100 px-5 py-4 dark:border-slate-800">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-5 py-4 dark:border-slate-800">
               <h3 className="font-bold text-slate-900 dark:text-white">Examination Results</h3>
+              <ExportPair
+                disabled={!(student.examResults || []).length}
+                onPrint={() => printReport({
+                  title: `Report Card — ${student.name}`,
+                  subtitle: `${student.admissionNo || ''}${student.batch?.name ? ` · ${student.batch.name}` : ''}`,
+                  meta: [{ label: 'Centre', value: settings?.centerName || 'Tuition Center' }, { label: 'Issued by', value: reporterName(user) }],
+                  columns: [
+                    { header: 'Examination', value: (r) => r.examination?.name },
+                    { header: 'Exam Date', value: (r) => (r.examination?.examDate ? new Date(r.examination.examDate).toLocaleDateString('en-IN') : '') },
+                    { header: 'Subject', value: (r) => r.subject?.name },
+                    { header: 'Marks', value: (r) => `${r.marksObtained} / ${r.examination?.totalMarks}` },
+                    { header: 'Grade', value: (r) => r.grade },
+                  ],
+                  rows: student.examResults || [],
+                })}
+                onCsv={() => downloadCsv({
+                  title: `report-card-${student.admissionNo || student.id}`,
+                  columns: [
+                    { header: 'Examination', value: (r) => r.examination?.name },
+                    { header: 'Subject', value: (r) => r.subject?.name },
+                    { header: 'Marks', value: (r) => r.marksObtained },
+                    { header: 'Total Marks', value: (r) => r.examination?.totalMarks },
+                    { header: 'Grade', value: (r) => r.grade },
+                  ],
+                  rows: student.examResults || [],
+                })}
+              />
             </div>
-            {student.examResults.length === 0 ? <Empty message="No results yet" /> : (
+            {(student.examResults || []).length === 0 ? <Empty message="No results yet" /> : (
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead className="border-b border-slate-100 dark:border-slate-800">
@@ -454,10 +659,41 @@ export function StudentDetail() {
           </div>
 
           <div className="card overflow-hidden">
-            <div className="border-b border-slate-100 px-5 py-4 dark:border-slate-800">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-5 py-4 dark:border-slate-800">
               <h3 className="font-bold text-slate-900 dark:text-white">Attendance History</h3>
+              <ExportPair
+                disabled={!(student.attendance || []).length}
+                onPrint={() => printReport({
+                  title: `Attendance Register — ${student.name}`,
+                  subtitle: `${student.admissionNo || ''} · ${student.batch?.name || ''}`,
+                  meta: [
+                    { label: 'Centre', value: settings?.centerName || 'Tuition Center' },
+                    { label: 'Records', value: `${(student.attendance || []).length}` },
+                    { label: 'Attendance %', value: attendancePct === null ? '—' : `${attendancePct}%` },
+                    { label: 'Issued by', value: reporterName(user) },
+                  ],
+                  columns: [
+                    { header: 'Date', value: (a) => new Date(a.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) },
+                    { header: 'Student', value: () => student.name },
+                    { header: 'Roll No.', value: () => student.admissionNo },
+                    { header: 'Batch', value: () => student.batch?.name },
+                    { header: 'Status', value: (a) => prettyStatus(a.status) },
+                    { header: 'Remark', value: (a) => a.remark },
+                  ],
+                  rows: student.attendance || [],
+                })}
+                onCsv={() => downloadCsv({
+                  title: `attendance-${student.admissionNo || student.id}`,
+                  columns: [
+                    { header: 'Date', value: (a) => new Date(a.date).toISOString().slice(0, 10) },
+                    { header: 'Status', value: (a) => prettyStatus(a.status) },
+                    { header: 'Remark', value: (a) => a.remark },
+                  ],
+                  rows: student.attendance || [],
+                })}
+              />
             </div>
-            {student.attendance.length === 0 ? <Empty message="No attendance recorded yet" /> : (
+            {(student.attendance || []).length === 0 ? <Empty message="No attendance recorded yet" /> : (
               <div className="flex flex-wrap gap-1.5 p-5">
                 {student.attendance.slice(0, 60).map((a) => (
                   <span key={a.id} title={`${new Date(a.date).toLocaleDateString('en-IN')} — ${a.status}`}

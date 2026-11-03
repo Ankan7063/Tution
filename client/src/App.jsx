@@ -2,6 +2,7 @@ import { Navigate, Route, Routes, useLocation, Link } from 'react-router-dom';
 import { GraduationCap } from 'lucide-react';
 import { useApp } from './context/AppContext.jsx';
 import { Spinner } from './components/ui.jsx';
+import { can as allowed } from './lib/permissions.js';
 import PublicLayout from './components/PublicLayout.jsx';
 import AdminLayout from './components/AdminLayout.jsx';
 import Home from './pages/public/Home.jsx';
@@ -20,6 +21,7 @@ import Exams from './pages/admin/Exams.jsx';
 import Reports from './pages/admin/Reports.jsx';
 import Announcements from './pages/admin/Announcements.jsx';
 import Settings from './pages/admin/Settings.jsx';
+import Users from './pages/admin/Users.jsx';
 import StudentPortal from './pages/portal/StudentPortal.jsx';
 
 function RequireStaff() {
@@ -29,6 +31,15 @@ function RequireStaff() {
   if (!user) return <Navigate to="/admin/login" replace state={{ from: location.pathname }} />;
   if (user.role === 'STUDENT') return <Navigate to="/portal" replace />;
   return <AdminLayout />;
+}
+
+// The capability is the same string the API requires for the page's own requests, so typing an
+// admin URL by hand lands back on the dashboard instead of a page this session cannot use.
+function RequirePermission({ permission, children }) {
+  const { user, authLoading } = useApp();
+  if (authLoading) return <Spinner label="Checking session…" />;
+  if (!allowed(user, permission)) return <Navigate to="/admin" replace />;
+  return children;
 }
 
 function RequireStudent() {
@@ -70,20 +81,21 @@ export default function App() {
       <Route path="/portal" element={<RequireStudent />} />
 
       <Route path="/admin" element={<RequireStaff />}>
-        <Route index element={<Dashboard />} />
-        <Route path="students" element={<Students />} />
-        <Route path="students/new" element={<NewAdmission />} />
-        <Route path="students/:id" element={<StudentDetail />} />
-        <Route path="teachers" element={<Teachers />} />
-        <Route path="courses" element={<Courses />} />
-        <Route path="batches" element={<Batches />} />
-        <Route path="batches/:id" element={<BatchDetail />} />
-        <Route path="attendance" element={<Attendance />} />
-        <Route path="exams" element={<Exams />} />
-        <Route path="fees" element={<Fees />} />
-        <Route path="reports" element={<Reports />} />
-        <Route path="announcements" element={<Announcements />} />
-        <Route path="settings" element={<Settings />} />
+        <Route index element={<RequirePermission permission="dashboard:read"><Dashboard /></RequirePermission>} />
+        <Route path="students" element={<RequirePermission permission="students:read"><Students /></RequirePermission>} />
+        <Route path="students/new" element={<RequirePermission permission="students:write"><NewAdmission /></RequirePermission>} />
+        <Route path="students/:id" element={<RequirePermission permission="students:read"><StudentDetail /></RequirePermission>} />
+        <Route path="teachers" element={<RequirePermission permission="teachers:read"><Teachers /></RequirePermission>} />
+        <Route path="courses" element={<RequirePermission permission="courses:read"><Courses /></RequirePermission>} />
+        <Route path="batches" element={<RequirePermission permission="batches:read"><Batches /></RequirePermission>} />
+        <Route path="batches/:id" element={<RequirePermission permission="batches:read"><BatchDetail /></RequirePermission>} />
+        <Route path="attendance" element={<RequirePermission permission="attendance:read"><Attendance /></RequirePermission>} />
+        <Route path="exams" element={<RequirePermission permission="exams:read"><Exams /></RequirePermission>} />
+        <Route path="fees" element={<RequirePermission permission="fees:read"><Fees /></RequirePermission>} />
+        <Route path="reports" element={<RequirePermission permission="reports:read"><Reports /></RequirePermission>} />
+        <Route path="announcements" element={<RequirePermission permission="announcements:write"><Announcements /></RequirePermission>} />
+        <Route path="users" element={<RequirePermission permission="users:manage"><Users /></RequirePermission>} />
+        <Route path="settings" element={<RequirePermission permission="settings:manage"><Settings /></RequirePermission>} />
       </Route>
 
       <Route path="*" element={<NotFound />} />

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { Batch, ClassSchedule, Course, ExamResult, Examination, oid, Student, Subject } from '../models/index.js';
-import { authenticate, isStaff } from '../middleware/auth.js';
+import { attachIdentity, authenticate, requirePermission } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 
 const router = Router();
@@ -40,7 +40,9 @@ const relation = (obj, key, name, fields) => {
   return obj;
 };
 
-router.get('/courses', async (req, res, next) => {
+// Public for the centre website; a signed-in teacher or staff member still gets the
+// financial columns removed, so the fee cards cannot be read from here.
+router.get('/courses', attachIdentity, async (req, res, next) => {
   try {
     const courses = await Course.find().sort({ name: 1 });
     const ids = courses.map((c) => c._id);
@@ -72,7 +74,7 @@ router.get('/courses', async (req, res, next) => {
   }
 });
 
-router.post('/courses', authenticate, isStaff, validate(courseSchema), async (req, res, next) => {
+router.post('/courses', authenticate, requirePermission('courses:write'), validate(courseSchema), async (req, res, next) => {
   try {
     res.status(201).json(await Course.create(req.body));
   } catch (err) {
@@ -81,7 +83,7 @@ router.post('/courses', authenticate, isStaff, validate(courseSchema), async (re
   }
 });
 
-router.put('/courses/:id', authenticate, isStaff, validate(courseSchema.partial()), async (req, res, next) => {
+router.put('/courses/:id', authenticate, requirePermission('courses:write'), validate(courseSchema.partial()), async (req, res, next) => {
   try {
     const _id = oid(req.params.id);
     if (!_id) return res.status(400).json({ message: 'Invalid id' });
@@ -93,7 +95,7 @@ router.put('/courses/:id', authenticate, isStaff, validate(courseSchema.partial(
   }
 });
 
-router.delete('/courses/:id', authenticate, isStaff, async (req, res, next) => {
+router.delete('/courses/:id', authenticate, requirePermission('courses:write'), async (req, res, next) => {
   try {
     const _id = oid(req.params.id);
     if (!_id) return res.status(400).json({ message: 'Invalid id' });
@@ -111,7 +113,7 @@ router.delete('/courses/:id', authenticate, isStaff, async (req, res, next) => {
   }
 });
 
-router.post('/subjects', authenticate, isStaff, validate(subjectSchema), async (req, res, next) => {
+router.post('/subjects', authenticate, requirePermission('courses:write'), validate(subjectSchema), async (req, res, next) => {
   try {
     const { name, courseId, teacherId } = req.body;
     if (badRef(courseId, teacherId)) return res.status(400).json({ message: 'Invalid id' });
@@ -121,7 +123,7 @@ router.post('/subjects', authenticate, isStaff, validate(subjectSchema), async (
   }
 });
 
-router.put('/subjects/:id', authenticate, isStaff, validate(subjectSchema.partial()), async (req, res, next) => {
+router.put('/subjects/:id', authenticate, requirePermission('courses:write'), validate(subjectSchema.partial()), async (req, res, next) => {
   try {
     const _id = oid(req.params.id);
     if (!_id) return res.status(400).json({ message: 'Invalid id' });
@@ -139,7 +141,7 @@ router.put('/subjects/:id', authenticate, isStaff, validate(subjectSchema.partia
   }
 });
 
-router.delete('/subjects/:id', authenticate, isStaff, async (req, res, next) => {
+router.delete('/subjects/:id', authenticate, requirePermission('courses:write'), async (req, res, next) => {
   try {
     const _id = oid(req.params.id);
     if (!_id) return res.status(400).json({ message: 'Invalid id' });

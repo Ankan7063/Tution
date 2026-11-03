@@ -2,12 +2,23 @@ import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { User, Student, Teacher, oid } from '../models/index.js';
-import { signToken, authenticate, isStaff } from '../middleware/auth.js';
+import { signToken, authenticate, requirePermission } from '../middleware/auth.js';
 import { validate, ApiError } from '../middleware/validate.js';
 import { nextAdmissionNo } from '../utils/helpers.js';
 import { sendMail, notifyAdmins } from '../utils/notify.js';
+import { PERMISSIONS, ROLE_LABELS, ROLE_PERMISSIONS, permissionsFor } from '../utils/permissions.js';
 
 const router = Router();
+
+// The identity the client works with. `permissions` drives which nav entries, routes and
+// buttons render — the server re-checks every one of them on each request.
+const publicUser = (user) => ({
+  id: String(user.id),
+  email: user.email,
+  role: user.role,
+  roleLabel: ROLE_LABELS[user.role] ?? user.role,
+  permissions: permissionsFor(user),
+});
 
 // Password-reset one-time codes live in memory: reset flow is short-lived and demo data does
 // not need durable codes. { email: { code, expiresAt, attempts } }
@@ -30,10 +41,7 @@ router.post('/login', validate(loginSchema), async (req, res, next) => {
 
     await User.findByIdAndUpdate(user._id, { lastLoginAt: new Date() }, { new: true, runValidators: true });
     const token = signToken({ id: String(user.id), role: user.role });
-    res.json({
-      token,
-      user: { id: user.id, email: user.email, role: user.role, studentId: undefined, teacherId: undefined },
-    });
+    res.json({ token, user: publicUser(user) });
   } catch (err) {
     next(err);
   }
@@ -47,9 +55,7 @@ router.get('/me', authenticate, async (req, res, next) => {
       Teacher.findOne({ userId: user._id }),
     ]);
     res.json({
-      id: user.id,
-      email: user.email,
-      role: user.role,
+      ...publicUser(user),
       student: student ? { id: student.id, name: student.name, admissionNo: student.admissionNo } : null,
       teacher: teacher ? { id: teacher.id, name: teacher.name, employeeNo: teacher.employeeNo } : null,
     });
@@ -73,16 +79,54 @@ router.post('/change-password', authenticate, validate(z.object({
   }
 });
 
-// Admin creates user accounts (teachers / students / admins)
-router.post('/users', authenticate, isStaff, validate(z.object({
+// ---- Account administration: only an admin reaches these ----
+
+const assignableRoles = ['SUPER_ADMIN', 'ADMIN', 'TEACHER', 'STAFF', 'STUDENT'];
+
+// The catalogue the admin UI renders, plus what each role gets out of the box.
+router.get('/permissions', authenticate, requirePermission('users:manage'), async (req, res) => {
+  res.json({
+    catalogue: Object.entries(PERMISSIONS).map(([key, description]) => ({ key, description })),
+    roleDefaults: ROLE_PERMISSIONS,
+    roleLabels: ROLE_LABELS,
+  });
+});
+
+router.get('/users', authenticate, requirePermission('users:manage'), async (req, res, next) => {
+  try {
+    const users = await User.find().sort({ role: 1, email: 1 });
+    const [students, teachers] = await Promise.all([
+      Student.find({ userId: { $in: users.map((u) => u._id) } }).select('userId name admissionNo'),
+      Teacher.find({ userId: { $in: users.map((u) => u._id) } }).select('userId name employeeNo'),
+    ]);
+    const studentBy = new Map(students.map((s) => [String(s.userId), { id: s.id, name: s.name, admissionNo: s.admissionNo }]));
+    const teacherBy = new Map(teachers.map((t) => [String(t.userId), { id: t.id, name: t.name, employeeNo: t.employeeNo }]));
+    // No credential field is ever serialised: the model's toJSON drops passwordHash.
+    res.json(users.map((user) => Object.assign(publicUser(user), {
+      isActive: user.isActive,
+      lastLoginAt: user.lastLoginAt ?? null,
+      student: studentBy.get(String(user.id)) ?? null,
+      teacher: teacherBy.get(String(user.id)) ?? null,
+    })));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Admin creates user accounts (teachers / staff / students / admins)
+router.post('/users', authenticate, requirePermission('users:manage'), validate(z.object({
   email: z.string().email(),
-  password: z.string().min(8),
-  role: z.enum(['SUPER_ADMIN', 'ADMIN', 'TEACHER', 'STUDENT']),
+  password: z.string().min(8, 'Password must be at least 8 characters'),
+  role: z.enum(assignableRoles),
+  permissions: z.array(z.enum(Object.keys(PERMISSIONS))).optional(),
   studentId: z.string().optional(),
   teacherId: z.string().optional(),
 })), async (req, res, next) => {
   try {
-    const { email, password, role, studentId, teacherId } = req.body;
+    const { email, password, role, permissions, studentId, teacherId } = req.body;
+    if (role === 'SUPER_ADMIN' && req.user.role !== 'SUPER_ADMIN') {
+      throw new ApiError(403, 'Only a super admin can create a super admin account');
+    }
     const exists = await User.findOne({ email: email.toLowerCase() });
     if (exists) throw new ApiError(409, 'A user with this email already exists');
     const _studentId = studentId ? oid(studentId) : null;
@@ -91,10 +135,86 @@ router.post('/users', authenticate, isStaff, validate(z.object({
       return res.status(400).json({ message: 'Invalid id' });
     }
     const passwordHash = await bcrypt.hash(password, 12);
-    const user = await User.create({ email: email.toLowerCase(), passwordHash, role });
+    const user = await User.create({
+      email: email.toLowerCase(),
+      passwordHash,
+      role,
+      permissions: permissions ?? [],
+    });
     if (_studentId) await Student.updateOne({ _id: _studentId }, { userId: user._id });
     if (_teacherId) await Teacher.updateOne({ _id: _teacherId }, { userId: user._id });
-    res.status(201).json({ id: user.id, email: user.email, role: user.role });
+    res.status(201).json(publicUser(user));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Role, extra grants, linked profile and active flag. Passwords are never read or returned here.
+router.patch('/users/:id', authenticate, requirePermission('users:manage'), validate(z.object({
+  role: z.enum(assignableRoles).optional(),
+  permissions: z.array(z.enum(Object.keys(PERMISSIONS))).optional(),
+  isActive: z.coerce.boolean().optional(),
+  studentId: z.string().nullable().optional(),
+  teacherId: z.string().nullable().optional(),
+})), async (req, res, next) => {
+  try {
+    const _id = oid(req.params.id);
+    if (!_id) return res.status(400).json({ message: 'Invalid id' });
+    const target = await User.findOne({ _id });
+    if (!target) return res.status(404).json({ message: 'User not found' });
+    const isSelf = String(_id) === String(req.user.id);
+    if (target.role === 'SUPER_ADMIN' && req.user.role !== 'SUPER_ADMIN') {
+      throw new ApiError(403, 'Only a super admin can change a super admin account');
+    }
+    if (isSelf && (req.body.isActive === false || (req.body.role && req.body.role !== target.role))) {
+      throw new ApiError(400, 'You cannot deactivate or change your own role');
+    }
+    if (req.body.role === 'SUPER_ADMIN' && req.user.role !== 'SUPER_ADMIN') {
+      throw new ApiError(403, 'Only a super admin can grant the super admin role');
+    }
+    if (req.body.role !== undefined) target.role = req.body.role;
+    if (req.body.permissions !== undefined) target.permissions = req.body.permissions;
+    if (req.body.isActive !== undefined) target.isActive = req.body.isActive;
+    await target.save();
+
+    // Re-linking moves the account pointer; a person record never ends up without one.
+    const link = async (Model, rawId, ownField) => {
+      if (rawId === undefined) return;
+      await Model.updateOne({ userId: target._id }, { userId: null });
+      if (!rawId) return;
+      const _linkId = oid(rawId);
+      if (!_linkId) throw new ApiError(400, `Invalid ${ownField} id`);
+      const record = await Model.findById(_linkId);
+      if (!record) throw new ApiError(404, `${ownField} record not found`);
+      if (record.userId && String(record.userId) !== String(target._id)) {
+        throw new ApiError(409, `That ${ownField.toLowerCase()} is already linked to another account`);
+      }
+      await Model.updateOne({ _id: _linkId }, { userId: target._id });
+    };
+    await link(Student, req.body.studentId, 'student');
+    await link(Teacher, req.body.teacherId, 'teacher');
+
+    res.json(publicUser(target));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Admin-set password. The old password is not needed and the new one is never echoed back.
+router.post('/users/:id/reset-password', authenticate, requirePermission('users:manage'), validate(z.object({
+  newPassword: z.string().min(8, 'Password must be at least 8 characters'),
+})), async (req, res, next) => {
+  try {
+    const _id = oid(req.params.id);
+    if (!_id) return res.status(400).json({ message: 'Invalid id' });
+    const target = await User.findOne({ _id });
+    if (!target) return res.status(404).json({ message: 'User not found' });
+    if (target.role === 'SUPER_ADMIN' && req.user.role !== 'SUPER_ADMIN') {
+      throw new ApiError(403, 'Only a super admin can reset a super admin password');
+    }
+    target.passwordHash = await bcrypt.hash(req.body.newPassword, 12);
+    await target.save();
+    res.json({ message: `Password updated for ${target.email}` });
   } catch (err) {
     next(err);
   }

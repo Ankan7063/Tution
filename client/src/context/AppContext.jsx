@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import api, { getObject } from '../api/client.js';
+import { can as hasPermission } from '../lib/permissions.js';
 
 const AppContext = createContext(null);
 
@@ -47,8 +48,12 @@ export function AppProvider({ children }) {
 
   const isStaffUser = user && (user.role === 'SUPER_ADMIN' || user.role === 'ADMIN');
 
+  // Bound to the signed-in session so a page asks "may this user do X" once, in the same
+  // words the API uses.
+  const can = (permission) => hasPermission(user, permission);
+
   return (
-    <AppContext.Provider value={{ user, setUser, settings, loadSettings, dark, setDark, login, logout, authLoading, isStaffUser }}>
+    <AppContext.Provider value={{ user, setUser, settings, loadSettings, dark, setDark, login, logout, authLoading, isStaffUser, can }}>
       {children}
     </AppContext.Provider>
   );

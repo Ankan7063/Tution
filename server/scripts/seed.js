@@ -16,6 +16,7 @@ const DEMO_PASSWORDS = {
   SUPER_ADMIN: 'Admin@123',
   ADMIN: 'Admin@123',
   TEACHER: 'Teacher@123',
+  STAFF: 'Staff@123',
   STUDENT: 'Student@123',
 };
 

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { Announcement, Notification, oid } from '../models/index.js';
-import { authenticate, isStaff } from '../middleware/auth.js';
+import { authenticate, requirePermission } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 
 const router = Router();
@@ -41,7 +41,7 @@ router.get('/announcements', async (req, res, next) => {
   }
 });
 
-router.post('/announcements', authenticate, isStaff, validate(z.object({
+router.post('/announcements', authenticate, requirePermission('announcements:write'), validate(z.object({
   title: z.string().min(2),
   message: z.string().min(2),
   audience: z.enum(['ALL', 'STUDENTS', 'TEACHERS']).default('ALL'),
@@ -54,7 +54,7 @@ router.post('/announcements', authenticate, isStaff, validate(z.object({
   }
 });
 
-router.delete('/announcements/:id', authenticate, isStaff, async (req, res, next) => {
+router.delete('/announcements/:id', authenticate, requirePermission('announcements:write'), async (req, res, next) => {
   try {
     const _id = oid(req.params.id);
     if (!_id) return res.status(400).json({ message: 'Invalid id' });

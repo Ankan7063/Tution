@@ -14,11 +14,11 @@ import {
   Types,
   oid,
 } from '../models/index.js';
-import { authenticate, authorize } from '../middleware/auth.js';
+import { authenticate, requirePermission } from '../middleware/auth.js';
 import { startOfDay, utcDay } from '../utils/helpers.js';
 
 const router = Router();
-router.use(authenticate, authorize('SUPER_ADMIN', 'ADMIN'));
+router.use(authenticate, requirePermission('reports:read'));
 
 const round2 = (v) => Math.round((Number(v) || 0) * 100) / 100;
 
@@ -77,7 +77,7 @@ const countBy = async (Model, match, field) => {
   return new Map(rows.map((r) => [String(r._id), r.n]));
 };
 
-router.get('/fees', async (req, res, next) => {
+router.get('/fees', requirePermission('fees:read'), async (req, res, next) => {
   try {
     const { from, to, courseId, batchId, status } = req.query;
     const filter = {};
@@ -124,7 +124,7 @@ router.get('/fees', async (req, res, next) => {
   }
 });
 
-router.get('/collection', async (req, res, next) => {
+router.get('/collection', requirePermission('fees:read'), async (req, res, next) => {
   try {
     const { from, to, courseId, batchId, method } = req.query;
     const filter = {};

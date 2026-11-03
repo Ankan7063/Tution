@@ -1,8 +1,24 @@
 import { Fragment, useCallback, useEffect, useState } from 'react';
-import { Plus, Pencil, Trash2, Loader2, FileText, ClipboardList, Send, Trophy } from 'lucide-react';
+import { Plus, Pencil, Trash2, Loader2, FileText, ClipboardList, Send, Trophy, Printer, FileDown } from 'lucide-react';
 import api, { getArray, getObject, expectArray } from '../../api/client.js';
 import { useApp } from '../../context/AppContext.jsx';
+import { can as allowed } from '../../lib/permissions.js';
+import { downloadCsv, printReport, reporterName } from '../../lib/reports.js';
 import { Modal, Confirm, Spinner, Empty, ErrorNote, Field, SelectField, Badge, Avatar, useToast } from '../../components/ui.jsx';
+
+const prettyDate = (value) => (value ? new Date(value).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
+
+// One column set feeds the on-screen table, the printed mark sheet and the CSV download.
+const resultColumns = (totalMarks) => [
+  { header: 'Rank', value: 'rank' },
+  { header: 'Student Name', value: (r) => r.student?.name },
+  { header: 'Roll / Admission No.', value: (r) => r.student?.admissionNo },
+  { header: 'Subject', value: (r) => r.subject?.name || 'General' },
+  { header: 'Marks', value: (r) => `${Number(r.marksObtained)} / ${totalMarks}` },
+  { header: 'Percentage', value: (r) => `${r.percentage}%` },
+  { header: 'Grade', value: (r) => String(r.grade || '—') },
+  { header: 'Remarks', value: (r) => r.remarks || '—' },
+];
 
 const emptyExam = { name: '', courseId: '', batchId: '', examDate: new Date().toISOString().slice(0, 10), totalMarks: 100 };
 
@@ -159,6 +175,7 @@ function ResultsModal({ open, onClose, exam, subjects }) {
 }
 
 function ResultTable({ exam }) {
+  const { user, settings } = useApp();
   const [data, setData] = useState(null);
 
   useEffect(() => {
@@ -169,15 +186,39 @@ function ResultTable({ exam }) {
   if (!data) return <Spinner />;
   if (!data.results.length) return <Empty message="No marks entered yet" />;
 
-  const sorted = [...data.results].sort((a, b) => Number(b.marksObtained) - Number(a.marksObtained));
+  const sorted = [...data.results]
+    .sort((a, b) => Number(b.marksObtained) - Number(a.marksObtained))
+    .map((r, i) => ({ ...r, rank: i + 1 }));
   const avg = Math.round((sorted.reduce((s, r) => s + r.percentage, 0) / sorted.length) * 100) / 100;
+
+  const report = {
+    title: `${exam.name} — Result Sheet`,
+    subtitle: `${sorted.length} students · out of ${data.totalMarks} marks`,
+    meta: [
+      { label: 'Centre', value: settings?.centerName || 'Tuition Center' },
+      { label: 'Course', value: exam.course?.name || 'All courses' },
+      { label: 'Batch', value: exam.batch?.name || 'All batches' },
+      { label: 'Exam date', value: prettyDate(exam.examDate) },
+      { label: 'Total marks', value: data.totalMarks },
+      { label: 'Class average', value: `${avg}%` },
+      { label: 'Issued by', value: reporterName(user) },
+    ],
+    columns: resultColumns(data.totalMarks),
+    rows: sorted,
+  };
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap gap-4 text-sm">
-        <span className="text-slate-500">Students evaluated: <b className="text-slate-800 dark:text-slate-200">{sorted.length}</b></span>
-        <span className="text-slate-500">Average: <b className="text-slate-800 dark:text-slate-200">{avg}%</b></span>
-        <span className="text-slate-500">Highest: <b className="text-emerald-600">{sorted[0]?.percentage}%</b></span>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex flex-wrap gap-4 text-sm">
+          <span className="text-slate-500">Students evaluated: <b className="text-slate-800 dark:text-slate-200">{sorted.length}</b></span>
+          <span className="text-slate-500">Average: <b className="text-slate-800 dark:text-slate-200">{avg}%</b></span>
+          <span className="text-slate-500">Highest: <b className="text-emerald-600">{sorted[0]?.percentage}%</b></span>
+        </div>
+        <div className="flex gap-2 no-print">
+          <button type="button" className="btn-ghost" onClick={() => printReport(report)}><Printer size={16} /> Print results</button>
+          <button type="button" className="btn-ghost" onClick={() => downloadCsv({ ...report, suffix: exam.name })}><FileDown size={16} /> CSV</button>
+        </div>
       </div>
       <div className="overflow-x-auto rounded-xl border border-slate-100 dark:border-slate-800">
         <table className="w-full">
@@ -185,10 +226,10 @@ function ResultTable({ exam }) {
             <tr><th className="th">Rank</th><th className="th">Student</th><th className="th">Subject</th><th className="th">Marks</th><th className="th">%</th><th className="th">Grade</th><th className="th">Remarks</th></tr>
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-            {sorted.map((r, i) => (
+            {sorted.map((r) => (
               <tr key={r.id} className="text-slate-700 dark:text-slate-300">
-                <td className="td">{i === 0 ? <Trophy size={16} className="text-amber-500" /> : i + 1}</td>
-                <td className="td font-semibold text-slate-900 dark:text-white">{r.student.name}<span className="block text-xs font-normal text-slate-400">{r.student.admissionNo}</span></td>
+                <td className="td">{r.rank === 1 ? <Trophy size={16} className="text-amber-500" /> : r.rank}</td>
+                <td className="td font-semibold text-slate-900 dark:text-white">{r.student?.name}<span className="block text-xs font-normal text-slate-400">{r.student?.admissionNo}</span></td>
                 <td className="td">{r.subject?.name || 'General'}</td>
                 <td className="td">{Number(r.marksObtained)} / {data.totalMarks}</td>
                 <td className="td font-semibold">{r.percentage}%</td>
@@ -204,6 +245,7 @@ function ResultTable({ exam }) {
 }
 
 export default function Exams() {
+  const { user } = useApp();
   const toast = useToast();
   const [exams, setExams] = useState(null);
   const [courses, setCourses] = useState([]);
@@ -213,6 +255,8 @@ export default function Exams() {
   const [expanded, setExpanded] = useState(null);
   const [del, setDel] = useState(null);
   const [busy, setBusy] = useState(false);
+
+  const canWrite = allowed(user, 'exams:write');
 
   const load = useCallback(() => api.get('/examinations').then(({ data }) => setExams(data)).catch((e) => { toast.error(e.message); setExams([]); }), []);
 
@@ -247,14 +291,16 @@ export default function Exams() {
         <h1 className="flex items-center gap-2 text-2xl font-extrabold text-slate-900 dark:text-white">
           <FileText size={24} className="text-brand-600" /> Exams &amp; Results
         </h1>
-        <button className="btn-primary" onClick={() => setModal({ open: true, exam: null })}><Plus size={16} /> Schedule Exam</button>
+        {canWrite && (
+          <button className="btn-primary" onClick={() => setModal({ open: true, exam: null })}><Plus size={16} /> Schedule Exam</button>
+        )}
       </div>
 
       {!exams ? <Spinner /> : exams.length === 0 ? <div className="card"><Empty message="No examinations yet" /></div> : (
         <div className="card overflow-x-auto">
           <table className="w-full">
             <thead className="bg-slate-50 dark:bg-slate-800/60">
-              <tr><th className="th">Examination</th><th className="th">Course</th><th className="th">Batch</th><th className="th">Date</th><th className="th">Marks</th><th className="th">Results</th><th className="th">Status</th><th className="th">Actions</th></tr>
+              <tr><th className="th">Examination</th><th className="th">Course</th><th className="th">Batch</th><th className="th">Date</th><th className="th">Marks</th><th className="th">Results</th><th className="th">Status</th>{canWrite && <th className="th no-print">Actions</th>}</tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {exams.map((e) => (
@@ -267,17 +313,19 @@ export default function Exams() {
                     <td className="td">{e.totalMarks}</td>
                     <td className="td">{e._count?.results || 0} entered</td>
                     <td className="td"><Badge value={e.status} /></td>
-                    <td className="td">
-                      <div className="flex gap-1">
-                        <button className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" onClick={() => setExpanded(expanded === e.id ? null : e.id)} aria-label="Toggle results"><ClipboardList size={16} /></button>
-                        <button className="rounded-lg p-2 text-brand-600 hover:bg-brand-50 dark:hover:bg-brand-900/30" onClick={() => setResultsFor(e)} aria-label="Enter marks"><Pencil size={16} /></button>
-                        {e.status !== 'RESULTS_PUBLISHED' && (
-                          <button className="rounded-lg p-2 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/30" onClick={() => publish(e)} aria-label="Publish results"><Send size={16} /></button>
-                        )}
-                        <button className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" onClick={() => setModal({ open: true, exam: e })} aria-label="Edit"><FileText size={16} /></button>
-                        <button className="rounded-lg p-2 text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30" onClick={() => setDel({ id: e.id, name: e.name })} aria-label="Delete"><Trash2 size={16} /></button>
-                      </div>
-                    </td>
+                    {canWrite && (
+                      <td className="td no-print">
+                        <div className="flex gap-1">
+                          <button className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" onClick={() => setExpanded(expanded === e.id ? null : e.id)} aria-label="Toggle results"><ClipboardList size={16} /></button>
+                          <button className="rounded-lg p-2 text-brand-600 hover:bg-brand-50 dark:hover:bg-brand-900/30" onClick={() => setResultsFor(e)} aria-label="Enter marks"><Pencil size={16} /></button>
+                          {e.status !== 'RESULTS_PUBLISHED' && (
+                            <button className="rounded-lg p-2 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/30" onClick={() => publish(e)} aria-label="Publish results"><Send size={16} /></button>
+                          )}
+                          <button className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" onClick={() => setModal({ open: true, exam: e })} aria-label="Edit"><FileText size={16} /></button>
+                          <button className="rounded-lg p-2 text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30" onClick={() => setDel({ id: e.id, name: e.name })} aria-label="Delete"><Trash2 size={16} /></button>
+                        </div>
+                      </td>
+                    )}
                   </tr>
                   {expanded === e.id && (
                     <tr>

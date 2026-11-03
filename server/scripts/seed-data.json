@@ -5,19 +5,20 @@
       "email": "teacher@tuitioncenter.com",
       "role": "TEACHER",
       "isActive": true,
-      "lastLoginAt": null,
+      "lastLoginAt": "2026-11-03T19:42:18.962Z",
       "createdAt": "2026-11-03T07:06:07.073Z",
-      "updatedAt": "2026-11-03T07:06:07.073Z",
-      "__v": 0
+      "updatedAt": "2026-11-03T19:42:18.962Z",
+      "__v": 1,
+      "permissions": []
     },
     {
       "_id": "e865ee131e4a4f8ca1750ac0",
       "email": "student@tuitioncenter.com",
       "role": "STUDENT",
       "isActive": true,
-      "lastLoginAt": "2026-11-03T07:59:16.225Z",
+      "lastLoginAt": "2026-11-03T19:42:26.408Z",
       "createdAt": "2026-11-03T07:06:07.453Z",
-      "updatedAt": "2026-11-03T07:59:16.226Z",
+      "updatedAt": "2026-11-03T19:42:26.408Z",
       "__v": 0
     },
     {
@@ -25,10 +26,43 @@
       "email": "admin@tuitioncenter.com",
       "role": "SUPER_ADMIN",
       "isActive": true,
-      "lastLoginAt": "2026-11-03T08:35:29.836Z",
+      "lastLoginAt": "2026-11-03T19:42:13.192Z",
       "createdAt": "2026-11-03T07:06:06.783Z",
-      "updatedAt": "2026-11-03T08:35:29.837Z",
+      "updatedAt": "2026-11-03T19:42:13.193Z",
       "__v": 0
+    },
+    {
+      "_id": "6aea1cb882a2ce3edf175ac7",
+      "email": "ankan1993biswas@gmail.com",
+      "role": "TEACHER",
+      "isActive": true,
+      "lastLoginAt": "2026-11-03T17:42:03.927Z",
+      "createdAt": "2026-11-03T17:41:12.620Z",
+      "updatedAt": "2026-11-03T17:42:03.928Z",
+      "__v": 0
+    },
+    {
+      "_id": "6aea1edb82a2ce3edf175bd5",
+      "email": "ankans@gmail.com",
+      "role": "SUPER_ADMIN",
+      "isActive": true,
+      "lastLoginAt": null,
+      "createdAt": "2026-11-03T17:50:19.117Z",
+      "updatedAt": "2026-11-03T17:50:19.117Z",
+      "__v": 0
+    },
+    {
+      "_id": "6aea37f57e6531c160c65940",
+      "email": "staff@tuitioncenter.com",
+      "role": "STAFF",
+      "permissions": [
+        "attendance:write"
+      ],
+      "isActive": true,
+      "lastLoginAt": "2026-11-03T19:42:25.828Z",
+      "createdAt": "2026-11-03T19:37:25.445Z",
+      "updatedAt": "2026-11-03T19:42:25.828Z",
+      "__v": 4
     }
   ],
   "Course": [
@@ -83,6 +117,19 @@
       "createdAt": "2026-11-03T07:06:07.084Z",
       "updatedAt": "2026-11-03T07:06:07.084Z",
       "__v": 0
+    },
+    {
+      "_id": "6aea1a7e82a2ce3edf175a09",
+      "code": "bcac401",
+      "name": "bca",
+      "description": "hello world",
+      "duration": "4 year",
+      "monthlyFee": 30000,
+      "admissionFee": 5000,
+      "isActive": true,
+      "createdAt": "2026-11-03T17:31:42.702Z",
+      "updatedAt": "2026-11-03T17:31:42.702Z",
+      "__v": 0
     }
   ],
   "Teacher": [
@@ -97,9 +144,9 @@
       "salary": 35000,
       "joiningDate": "2026-04-17T07:06:07.094Z",
       "status": "ACTIVE",
-      "userId": null,
+      "userId": "a918b6202eae480f91afafa2",
       "createdAt": "2026-11-03T07:06:07.096Z",
-      "updatedAt": "2026-11-03T07:06:07.096Z",
+      "updatedAt": "2026-11-03T19:37:24.928Z",
       "__v": 0
     },
     {
@@ -189,6 +236,15 @@
       "createdAt": "2026-11-03T07:06:07.093Z",
       "updatedAt": "2026-11-03T07:06:07.107Z",
       "__v": 0
+    },
+    {
+      "_id": "6aea1a9282a2ce3edf175a11",
+      "name": "c  programming",
+      "courseId": "6aea1a7e82a2ce3edf175a09",
+      "teacherId": "60ad5e55659f4dc3859e9c24",
+      "createdAt": "2026-11-03T17:32:02.543Z",
+      "updatedAt": "2026-11-03T17:32:02.543Z",
+      "__v": 0
     }
   ],
   "Batch": [
@@ -215,7 +271,7 @@
       "_id": "622103e6f8bc4e49ad60d61a",
       "name": "Evening Batch B",
       "courseId": "e678dd9eaad646138f13dc26",
-      "teacherId": "b3deb83f3f7f4bcdb4e546c4",
+      "teacherId": "60ad5e55659f4dc3859e9c24",
       "capacity": 20,
       "startTime": "17:00",
       "endTime": "19:00",
@@ -227,7 +283,7 @@
       "startDate": "2026-06-06T07:06:07.111Z",
       "isActive": true,
       "createdAt": "2026-11-03T07:06:07.112Z",
-      "updatedAt": "2026-11-03T07:06:07.112Z",
+      "updatedAt": "2026-11-03T17:24:47.161Z",
       "__v": 0
     },
     {
@@ -245,6 +301,25 @@
       "isActive": true,
       "createdAt": "2026-11-03T07:06:07.114Z",
       "updatedAt": "2026-11-03T07:06:07.114Z",
+      "__v": 0
+    },
+    {
+      "_id": "6aea18fd82a2ce3edf1758ad",
+      "name": "cvb",
+      "courseId": "eb7d3601fca94ecd97d37ff5",
+      "teacherId": "60ad5e55659f4dc3859e9c24",
+      "capacity": 30,
+      "startTime": "04:11",
+      "endTime": "01:11",
+      "days": [
+        "0",
+        "3",
+        "4"
+      ],
+      "isActive": true,
+      "startDate": "2026-11-03T17:25:17.419Z",
+      "createdAt": "2026-11-03T17:25:17.421Z",
+      "updatedAt": "2026-11-03T17:25:17.421Z",
       "__v": 0
     }
   ],
@@ -899,6 +974,52 @@
       "userId": "e865ee131e4a4f8ca1750ac0",
       "createdAt": "2026-11-03T07:06:07.120Z",
       "updatedAt": "2026-11-03T07:06:07.454Z",
+      "__v": 0
+    },
+    {
+      "_id": "6aea1adb82a2ce3edf175a3c",
+      "admissionNo": "ADM-2026-0021",
+      "name": "Ankan Biswas",
+      "photo": null,
+      "gender": "Male",
+      "dob": "+011111-11-11T00:00:00.000Z",
+      "phone": "000000000",
+      "email": "ankan1993biswas@gmail.com",
+      "parentName": "aa",
+      "parentPhone": "222222222222",
+      "address": "cmk",
+      "classGrade": "bca",
+      "courseId": "6aea1a7e82a2ce3edf175a09",
+      "batchId": "6aea18fd82a2ce3edf1758ad",
+      "monthlyFee": 20000,
+      "status": "ACTIVE",
+      "userId": null,
+      "admissionDate": "2026-11-03T17:33:15.522Z",
+      "createdAt": "2026-11-03T17:33:15.523Z",
+      "updatedAt": "2026-11-03T17:33:15.523Z",
+      "__v": 0
+    },
+    {
+      "_id": "6aea1b1d82a2ce3edf175a64",
+      "admissionNo": "ADM-2026-0022",
+      "name": "Ankan Biswas",
+      "photo": null,
+      "gender": "Male",
+      "dob": "1111-11-11T00:00:00.000Z",
+      "phone": "",
+      "email": "ankan1993biswas@gmail.com",
+      "parentName": "aa",
+      "parentPhone": "ararrrr",
+      "address": "tfu",
+      "classGrade": "",
+      "courseId": "e678dd9eaad646138f13dc26",
+      "batchId": null,
+      "monthlyFee": 300,
+      "status": "ACTIVE",
+      "userId": null,
+      "admissionDate": "2026-11-03T17:34:21.940Z",
+      "createdAt": "2026-11-03T17:34:21.940Z",
+      "updatedAt": "2026-11-03T17:34:21.940Z",
       "__v": 0
     }
   ],
@@ -6902,6 +7023,206 @@
       "remark": null,
       "createdAt": "2026-11-03T07:06:07.467Z",
       "__v": 0
+    },
+    {
+      "_id": "6aea190b443529fe6ea43bbd",
+      "studentId": "f36792c9384e49d4ac9aca9c",
+      "date": "2026-11-03T00:00:00.000Z",
+      "__v": 0,
+      "batchId": "622103e6f8bc4e49ad60d61a",
+      "createdAt": "2026-11-03T17:25:31.485Z",
+      "remark": null,
+      "status": "PRESENT"
+    },
+    {
+      "_id": "6aea190b443529fe6ea43bbe",
+      "date": "2026-11-03T00:00:00.000Z",
+      "studentId": "d28613c68ffc4656a99ddbe1",
+      "__v": 0,
+      "batchId": "622103e6f8bc4e49ad60d61a",
+      "createdAt": "2026-11-03T17:25:31.485Z",
+      "remark": null,
+      "status": "PRESENT"
+    },
+    {
+      "_id": "6aea190b443529fe6ea43bbf",
+      "date": "2026-11-03T00:00:00.000Z",
+      "studentId": "d002864162c245758ae161a1",
+      "__v": 0,
+      "batchId": "622103e6f8bc4e49ad60d61a",
+      "createdAt": "2026-11-03T17:25:31.485Z",
+      "remark": null,
+      "status": "PRESENT"
+    },
+    {
+      "_id": "6aea190b443529fe6ea43bc0",
+      "date": "2026-11-03T00:00:00.000Z",
+      "studentId": "4405d4fa3e344447ba4c8c26",
+      "__v": 0,
+      "batchId": "622103e6f8bc4e49ad60d61a",
+      "createdAt": "2026-11-03T17:25:31.485Z",
+      "remark": null,
+      "status": "ABSENT"
+    },
+    {
+      "_id": "6aea190b443529fe6ea43bc1",
+      "date": "2026-11-03T00:00:00.000Z",
+      "studentId": "1b133b6491554f19a4266331",
+      "__v": 0,
+      "batchId": "622103e6f8bc4e49ad60d61a",
+      "createdAt": "2026-11-03T17:25:31.485Z",
+      "remark": null,
+      "status": "PRESENT"
+    },
+    {
+      "_id": "6aea190b443529fe6ea43bc2",
+      "date": "2026-11-03T00:00:00.000Z",
+      "studentId": "3970db66ef934ddebdb05301",
+      "__v": 0,
+      "batchId": "622103e6f8bc4e49ad60d61a",
+      "createdAt": "2026-11-03T17:25:31.485Z",
+      "remark": null,
+      "status": "PRESENT"
+    },
+    {
+      "_id": "6aea190b443529fe6ea43bc3",
+      "date": "2026-11-03T00:00:00.000Z",
+      "studentId": "9b0d6876029e4a5aac343bd6",
+      "__v": 0,
+      "batchId": "622103e6f8bc4e49ad60d61a",
+      "createdAt": "2026-11-03T17:25:31.485Z",
+      "remark": null,
+      "status": "LATE"
+    },
+    {
+      "_id": "6aea190b443529fe6ea43bc4",
+      "date": "2026-11-03T00:00:00.000Z",
+      "studentId": "68c66298c86c4f9eb1389b27",
+      "__v": 0,
+      "batchId": "622103e6f8bc4e49ad60d61a",
+      "createdAt": "2026-11-03T17:25:31.485Z",
+      "remark": null,
+      "status": "PRESENT"
+    },
+    {
+      "_id": "6aea190b443529fe6ea43bc5",
+      "date": "2026-11-03T00:00:00.000Z",
+      "studentId": "f4ff2ef3136a4f73830ce306",
+      "__v": 0,
+      "batchId": "622103e6f8bc4e49ad60d61a",
+      "createdAt": "2026-11-03T17:25:31.485Z",
+      "remark": null,
+      "status": "LATE"
+    },
+    {
+      "_id": "6aea190b443529fe6ea43bc6",
+      "date": "2026-11-03T00:00:00.000Z",
+      "studentId": "09da076951d945788b0885ed",
+      "__v": 0,
+      "batchId": "622103e6f8bc4e49ad60d61a",
+      "createdAt": "2026-11-03T17:25:31.485Z",
+      "remark": null,
+      "status": "LATE"
+    },
+    {
+      "_id": "6aea190b443529fe6ea43bc7",
+      "date": "2026-11-03T00:00:00.000Z",
+      "studentId": "7f35f3a1d4d14469b183294f",
+      "__v": 0,
+      "batchId": "622103e6f8bc4e49ad60d61a",
+      "createdAt": "2026-11-03T17:25:31.485Z",
+      "remark": null,
+      "status": "PRESENT"
+    },
+    {
+      "_id": "6aea190b443529fe6ea43bc8",
+      "date": "2026-11-03T00:00:00.000Z",
+      "studentId": "080dfafe0cdc49bc9b5b94af",
+      "__v": 0,
+      "batchId": "622103e6f8bc4e49ad60d61a",
+      "createdAt": "2026-11-03T17:25:31.485Z",
+      "remark": null,
+      "status": "PRESENT"
+    },
+    {
+      "_id": "6aea190b443529fe6ea43bc9",
+      "date": "2026-11-03T00:00:00.000Z",
+      "studentId": "a980fd5be47940358f1d0e19",
+      "__v": 0,
+      "batchId": "622103e6f8bc4e49ad60d61a",
+      "createdAt": "2026-11-03T17:25:31.485Z",
+      "remark": null,
+      "status": "LATE"
+    },
+    {
+      "_id": "6aea190b443529fe6ea43bca",
+      "date": "2026-11-03T00:00:00.000Z",
+      "studentId": "485ee34827b64cbcb4ac4940",
+      "__v": 0,
+      "batchId": "622103e6f8bc4e49ad60d61a",
+      "createdAt": "2026-11-03T17:25:31.485Z",
+      "remark": null,
+      "status": "PRESENT"
+    },
+    {
+      "_id": "6aea190b443529fe6ea43bcb",
+      "date": "2026-11-03T00:00:00.000Z",
+      "studentId": "5675afcaab75484ba26103d8",
+      "__v": 0,
+      "batchId": "622103e6f8bc4e49ad60d61a",
+      "createdAt": "2026-11-03T17:25:31.485Z",
+      "remark": null,
+      "status": "PRESENT"
+    },
+    {
+      "_id": "6aea190b443529fe6ea43bcc",
+      "date": "2026-11-03T00:00:00.000Z",
+      "studentId": "7aeac314d7ac494ba174d36a",
+      "__v": 0,
+      "batchId": "622103e6f8bc4e49ad60d61a",
+      "createdAt": "2026-11-03T17:25:31.485Z",
+      "remark": null,
+      "status": "ABSENT"
+    },
+    {
+      "_id": "6aea190b443529fe6ea43bcd",
+      "date": "2026-11-03T00:00:00.000Z",
+      "studentId": "079d5b38ee224cbd83c2cbdf",
+      "__v": 0,
+      "batchId": "622103e6f8bc4e49ad60d61a",
+      "createdAt": "2026-11-03T17:25:31.485Z",
+      "remark": null,
+      "status": "ABSENT"
+    },
+    {
+      "_id": "6aea190b443529fe6ea43bce",
+      "date": "2026-11-03T00:00:00.000Z",
+      "studentId": "9aabc42787a54786b45666fc",
+      "__v": 0,
+      "batchId": "622103e6f8bc4e49ad60d61a",
+      "createdAt": "2026-11-03T17:25:31.485Z",
+      "remark": null,
+      "status": "PRESENT"
+    },
+    {
+      "_id": "6aea190b443529fe6ea43bcf",
+      "date": "2026-11-03T00:00:00.000Z",
+      "studentId": "5ce200539bf446c4afb68e77",
+      "__v": 0,
+      "batchId": "622103e6f8bc4e49ad60d61a",
+      "createdAt": "2026-11-03T17:25:31.485Z",
+      "remark": null,
+      "status": "PRESENT"
+    },
+    {
+      "_id": "6aea190b443529fe6ea43bd0",
+      "date": "2026-11-03T00:00:00.000Z",
+      "studentId": "da2bbad751954772bebe22e2",
+      "__v": 0,
+      "batchId": "622103e6f8bc4e49ad60d61a",
+      "createdAt": "2026-11-03T17:25:31.485Z",
+      "remark": null,
+      "status": "PRESENT"
     }
   ],
   "TeacherAttendance": [],
@@ -7069,9 +7390,9 @@
       "discount": 0,
       "lateFee": 0,
       "dueDate": "2026-11-10T00:00:00.000Z",
-      "status": "PENDING",
+      "status": "PAID",
       "createdAt": "2026-11-03T07:06:07.563Z",
-      "updatedAt": "2026-11-03T07:06:07.563Z",
+      "updatedAt": "2026-11-03T17:27:57.544Z",
       "__v": 0
     },
     {
@@ -7741,9 +8062,9 @@
       "discount": 0,
       "lateFee": 0,
       "dueDate": "2026-11-10T00:00:00.000Z",
-      "status": "PARTIAL",
+      "status": "PAID",
       "createdAt": "2026-11-03T07:06:07.688Z",
-      "updatedAt": "2026-11-03T07:06:07.690Z",
+      "updatedAt": "2026-11-03T17:27:13.313Z",
       "__v": 0
     }
   ],
@@ -8317,7 +8638,32 @@
       "paymentDate": "2026-11-03T00:00:00.000Z",
       "note": null,
       "receivedById": "7f71c1eb7ffc4313b0a38cf6",
-      "createdAt": "2026-11-03T08:07:34.965Z",
+      "createdAt": "2026-11-03T08:07:34.965Z"
+    },
+    {
+      "_id": "6aea197182a2ce3edf17592a",
+      "receiptNo": "RCP-2026-00045",
+      "studentId": "f36792c9384e49d4ac9aca9c",
+      "feeRecordId": "eaef34eb5b0d4f5da33fee9a",
+      "amount": 900,
+      "method": "CASH",
+      "paymentDate": "2026-11-03T00:00:00.000Z",
+      "note": "hello",
+      "receivedById": "7f71c1eb7ffc4313b0a38cf6",
+      "createdAt": "2026-11-03T17:27:13.803Z",
+      "__v": 0
+    },
+    {
+      "_id": "6aea199e82a2ce3edf175952",
+      "receiptNo": "RCP-2026-00046",
+      "studentId": "079d5b38ee224cbd83c2cbdf",
+      "feeRecordId": "0c3a6b3c884a4b90b71bc631",
+      "amount": 1800,
+      "method": "CASH",
+      "paymentDate": "2026-11-03T00:00:00.000Z",
+      "note": null,
+      "receivedById": "7f71c1eb7ffc4313b0a38cf6",
+      "createdAt": "2026-11-03T17:27:58.012Z",
       "__v": 0
     }
   ],
@@ -8412,7 +8758,7 @@
       "message": "Tuition Center management system is ready.",
       "type": "INFO",
       "link": null,
-      "isRead": false,
+      "isRead": true,
       "createdAt": "2026-11-03T07:06:07.705Z",
       "__v": 0
     },
@@ -8423,7 +8769,7 @@
       "message": "Some monthly fee records are still unpaid.",
       "type": "FEE",
       "link": "/admin/fees/pending",
-      "isRead": false,
+      "isRead": true,
       "createdAt": "2026-11-03T07:06:07.705Z",
       "__v": 0
     },
@@ -8434,7 +8780,7 @@
       "message": "Attendance for 2/11/2026: 6 present, 1 absent.",
       "type": "ATTENDANCE",
       "link": null,
-      "isRead": false,
+      "isRead": true,
       "createdAt": "2026-11-03T07:55:31.181Z",
       "__v": 0
     },
@@ -8445,7 +8791,7 @@
       "message": "Attendance for 2/11/2026: 5 present, 2 absent.",
       "type": "ATTENDANCE",
       "link": null,
-      "isRead": false,
+      "isRead": true,
       "createdAt": "2026-11-03T08:03:07.143Z",
       "__v": 0
     },
@@ -8456,7 +8802,7 @@
       "message": "Nitin Verma paid 600 (RCP-2026-00044).",
       "type": "FEE",
       "link": "/admin/fees/collection",
-      "isRead": false,
+      "isRead": true,
       "createdAt": "2026-11-03T08:07:34.971Z",
       "__v": 0
     },
@@ -8467,8 +8813,63 @@
       "message": "Attendance for 2/11/2026: 5 present, 2 absent.",
       "type": "ATTENDANCE",
       "link": null,
-      "isRead": false,
+      "isRead": true,
       "createdAt": "2026-11-03T08:14:10.755Z",
+      "__v": 0
+    },
+    {
+      "_id": "6aea190b82a2ce3edf1758c6",
+      "userId": null,
+      "title": "Attendance Marked",
+      "message": "Attendance for 3/11/2026: 17 present, 3 absent.",
+      "type": "ATTENDANCE",
+      "link": null,
+      "isRead": true,
+      "createdAt": "2026-11-03T17:25:31.849Z",
+      "__v": 0
+    },
+    {
+      "_id": "6aea197282a2ce3edf17592e",
+      "userId": null,
+      "title": "Fee Payment Received",
+      "message": "Neha Naskar paid 900 (RCP-2026-00045).",
+      "type": "FEE",
+      "link": "/admin/fees/collection",
+      "isRead": true,
+      "createdAt": "2026-11-03T17:27:14.507Z",
+      "__v": 0
+    },
+    {
+      "_id": "6aea199e82a2ce3edf175956",
+      "userId": null,
+      "title": "Fee Payment Received",
+      "message": "Sneha Sharma paid 1800 (RCP-2026-00046).",
+      "type": "FEE",
+      "link": "/admin/fees/collection",
+      "isRead": true,
+      "createdAt": "2026-11-03T17:27:58.717Z",
+      "__v": 0
+    },
+    {
+      "_id": "6aea1adb82a2ce3edf175a3f",
+      "userId": null,
+      "title": "New Student Registered",
+      "message": "Ankan Biswas (ADM-2026-0021) was admitted.",
+      "type": "STUDENT",
+      "link": "/admin/students/6aea1adb82a2ce3edf175a3c",
+      "isRead": true,
+      "createdAt": "2026-11-03T17:33:15.993Z",
+      "__v": 0
+    },
+    {
+      "_id": "6aea1b1e82a2ce3edf175a67",
+      "userId": null,
+      "title": "New Student Registered",
+      "message": "Ankan Biswas (ADM-2026-0022) was admitted.",
+      "type": "STUDENT",
+      "link": "/admin/students/6aea1b1d82a2ce3edf175a64",
+      "isRead": true,
+      "createdAt": "2026-11-03T17:34:22.422Z",
       "__v": 0
     }
   ],
@@ -8487,12 +8888,12 @@
     {
       "_id": "6ae9a9b10c23f5d3ac0a10eb",
       "key": 1,
-      "centerName": "Tuition Center",
-      "logoUrl": null,
+      "centerName": "VISION ACADEMY",
+      "logoUrl": "https://www.vecteezy.com/photo/8575826-beautiful-sunflower-pic",
       "tagline": "Excel in academics with expert guidance",
       "address": "12, Park Street, Kolkata, West Bengal 700016",
       "phone": "+919830123456",
-      "whatsapp": "919830123456",
+      "whatsapp": "7063070153",
       "email": "contact@tuitioncenter.in",
       "website": "www.tuitioncenter.in",
       "academicSession": "2026-27",
@@ -8502,7 +8903,7 @@
       "notifyNewStudent": true,
       "notifyExam": true,
       "createdAt": "2026-11-03T07:06:06.775Z",
-      "updatedAt": "2026-11-03T07:58:25.771Z",
+      "updatedAt": "2026-11-03T18:07:15.266Z",
       "__v": 0
     }
   ]

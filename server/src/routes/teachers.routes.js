@@ -8,11 +8,14 @@ import {
   TeacherAttendance,
   oid,
 } from '../models/index.js';
-import { authenticate, isStaff, authorize } from '../middleware/auth.js';
+import { authenticate, requirePermission } from '../middleware/auth.js';
 import { validate, ApiError } from '../middleware/validate.js';
 import { applyIds, contains, pick, startsWith } from '../utils/students-serde.js';
 
 const router = Router();
+
+// The teacher record behind a login, used to keep a teacher's reads on their own row.
+const ownTeacherId = (user) => Teacher.findOne({ userId: user._id }).select('_id').lean();
 
 // The public site lists faculty for visitors who hold no session, so this read-only directory
 // is registered ahead of the auth guard and returns only what a parent is meant to see.
@@ -50,7 +53,7 @@ const teacherSchema = z.object({
   userId: z.string().optional(),
 });
 
-router.get('/', authorize('SUPER_ADMIN', 'ADMIN', 'TEACHER'), async (req, res, next) => {
+router.get('/', requirePermission('teachers:read'), async (req, res, next) => {
   try {
     const { search, status } = req.query;
     const where = {
@@ -63,6 +66,11 @@ router.get('/', authorize('SUPER_ADMIN', 'ADMIN', 'TEACHER'), async (req, res, n
         ],
       }),
     };
+    if (req.user.role === 'TEACHER') {
+      const own = await ownTeacherId(req.user);
+      if (!own) return res.json([]);
+      where._id = own._id;
+    }
     const teachers = await Teacher.find(where)
       .populate(['user', 'batches', 'subjects'])
       .sort({ createdAt: -1 });
@@ -79,10 +87,14 @@ router.get('/', authorize('SUPER_ADMIN', 'ADMIN', 'TEACHER'), async (req, res, n
   }
 });
 
-router.get('/:id', async (req, res, next) => {
+router.get('/:id', requirePermission('teachers:read'), async (req, res, next) => {
   try {
     const _id = oid(req.params.id);
     if (!_id) return res.status(400).json({ message: 'Invalid id' });
+    if (req.user.role === 'TEACHER') {
+      const own = await ownTeacherId(req.user);
+      if (!own || String(own._id) !== String(_id)) throw new ApiError(403, 'You may only open your own profile');
+    }
     const teacher = await Teacher.findOne({ _id }).populate([
       { path: 'user' },
       { path: 'batches', populate: { path: 'course' } },
@@ -106,7 +118,7 @@ router.get('/:id', async (req, res, next) => {
   }
 });
 
-router.post('/', isStaff, validate(teacherSchema), async (req, res, next) => {
+router.post('/', requirePermission('teachers:write'), validate(teacherSchema), async (req, res, next) => {
   try {
     const data = applyIds(req.body, ['userId']);
     if (!data) return res.status(400).json({ message: 'Invalid id' });
@@ -122,7 +134,7 @@ router.post('/', isStaff, validate(teacherSchema), async (req, res, next) => {
   }
 });
 
-router.put('/:id', isStaff, validate(teacherSchema.partial()), async (req, res, next) => {
+router.put('/:id', requirePermission('teachers:write'), validate(teacherSchema.partial()), async (req, res, next) => {
   try {
     const _id = oid(req.params.id);
     if (!_id) return res.status(400).json({ message: 'Invalid id' });
@@ -136,7 +148,7 @@ router.put('/:id', isStaff, validate(teacherSchema.partial()), async (req, res, 
   }
 });
 
-router.delete('/:id', isStaff, async (req, res, next) => {
+router.delete('/:id', requirePermission('teachers:write'), async (req, res, next) => {
   try {
     const _id = oid(req.params.id);
     if (!_id) return res.status(400).json({ message: 'Invalid id' });
