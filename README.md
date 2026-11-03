@@ -68,15 +68,7 @@ cd client && npm run dev     # site on http://localhost:5173
 Vite proxies `/api` to `http://localhost:5001`, so if you change `PORT` in
 `server/.env` change the proxy target in `client/vite.config.js` too.
 
-### Demo logins (from the seed)
 
-| Role | Email | Password | Sign in at |
-| --- | --- | --- | --- |
-| Super Admin | `admin@tuitioncenter.com` | `Admin@123` | `/admin/login` |
-| Teacher | `teacher@tuitioncenter.com` | `Teacher@123` | `/admin/login` |
-| Student | `student@tuitioncenter.com` | `Student@123` | `/login` |
-
-Change these in Settings before going live.
 
 ### Production build
 
